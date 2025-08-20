@@ -1063,6 +1063,12 @@ body {
     border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
+.status-info {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--info-color);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
 .config-section ol {
     color: var(--gray-600);
     padding-left: 1.5rem;

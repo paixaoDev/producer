@@ -19,6 +19,7 @@ const newAnalysisBtn = document.getElementById('newAnalysisBtn');
 // Inicialização
 document.addEventListener('DOMContentLoaded', function() {
     initializeEventListeners();
+    restoreApplicationState();
 });
 
 function initializeEventListeners() {
@@ -45,11 +46,13 @@ function initializeEventListeners() {
     const modalClose = document.getElementById('modalClose');
     const setApiKeyBtn = document.getElementById('setApiKeyBtn');
     const clearApiKeyBtn = document.getElementById('clearApiKeyBtn');
+    const clearStateBtn = document.getElementById('clearStateBtn');
     
     configBtn.addEventListener('click', openConfigModal);
     modalClose.addEventListener('click', closeConfigModal);
     setApiKeyBtn.addEventListener('click', configureApiKey);
     clearApiKeyBtn.addEventListener('click', clearApiKey);
+    clearStateBtn.addEventListener('click', handleClearState);
     
     // Fechar modal clicando fora dele
     configModal.addEventListener('click', (e) => {
@@ -250,6 +253,9 @@ function showResults() {
     resultsSection.style.display = 'block';
     
     populateResults();
+    
+    // Salvar estado automaticamente
+    saveApplicationState();
 }
 
 function populateResults() {
@@ -616,6 +622,9 @@ function resetToUpload() {
     // Limpar arquivo
     clearFile();
     
+    // Limpar estado salvo
+    clearApplicationState();
+    
     // Mostrar seção de upload
     uploadSection.style.display = 'block';
     loadingSection.style.display = 'none';
@@ -778,11 +787,92 @@ function hasApiKey() {
     return !!localStorage.getItem('ai_api_key');
 }
 
+// ===== SISTEMA DE PERSISTÊNCIA =====
+
+// Salvar estado completo da aplicação
+function saveApplicationState() {
+    if (analysisResult) {
+        const appState = {
+            analysisResult: analysisResult,
+            currentFile: currentFile ? {
+                name: currentFile.name,
+                size: currentFile.size,
+                type: currentFile.type,
+                lastModified: currentFile.lastModified
+            } : null,
+            timestamp: Date.now(),
+            version: '1.0'
+        };
+        
+        try {
+            localStorage.setItem('producer_app_state', JSON.stringify(appState));
+            console.log('Estado da aplicação salvo com sucesso');
+        } catch (error) {
+            console.error('Erro ao salvar estado:', error);
+        }
+    }
+}
+
+// Restaurar estado da aplicação
+function restoreApplicationState() {
+    try {
+        const savedState = localStorage.getItem('producer_app_state');
+        if (savedState) {
+            const appState = JSON.parse(savedState);
+            
+            // Verificar se o estado não é muito antigo (7 dias)
+            const oneWeek = 7 * 24 * 60 * 60 * 1000;
+            if (Date.now() - appState.timestamp > oneWeek) {
+                console.log('Estado salvo muito antigo, ignorando...');
+                clearApplicationState();
+                return;
+            }
+            
+            // Restaurar dados de análise
+            if (appState.analysisResult) {
+                analysisResult = appState.analysisResult;
+                
+                // Restaurar informações do arquivo
+                if (appState.currentFile) {
+                    displayFileInfo(appState.currentFile);
+                }
+                
+                // Mostrar resultados diretamente
+                showResults();
+                
+                // Mostrar notificação
+                showNotification('Estado anterior restaurado com sucesso!', 'success');
+                
+                console.log('Estado da aplicação restaurado com sucesso');
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao restaurar estado:', error);
+        clearApplicationState();
+    }
+}
+
+// Limpar estado salvo
+function clearApplicationState() {
+    try {
+        localStorage.removeItem('producer_app_state');
+        console.log('Estado da aplicação limpo');
+    } catch (error) {
+        console.error('Erro ao limpar estado:', error);
+    }
+}
+
+// Verificar se existe estado salvo
+function hasSavedState() {
+    return !!localStorage.getItem('producer_app_state');
+}
+
 // Funções do modal de configuração
 function openConfigModal() {
     const configModal = document.getElementById('configModal');
     configModal.style.display = 'block';
     updateApiStatus();
+    updateStateStatus();
 }
 
 function closeConfigModal() {
@@ -808,6 +898,39 @@ function updateApiStatus() {
                 <span>Nenhuma chave de API configurada</span>
             </div>
         `;
+    }
+}
+
+function updateStateStatus() {
+    const stateStatus = document.getElementById('stateStatus');
+    if (!stateStatus) return;
+    
+    if (hasSavedState()) {
+        const savedState = JSON.parse(localStorage.getItem('producer_app_state'));
+        const saveDate = new Date(savedState.timestamp).toLocaleString('pt-BR');
+        const projectTitle = savedState.analysisResult?.overview?.title || 'Projeto sem nome';
+        
+        stateStatus.innerHTML = `
+            <div class="status-item status-success">
+                <i class="fas fa-save"></i>
+                <span>Estado salvo: "${projectTitle}" (${saveDate})</span>
+            </div>
+        `;
+    } else {
+        stateStatus.innerHTML = `
+            <div class="status-item status-info">
+                <i class="fas fa-info-circle"></i>
+                <span>Nenhum estado salvo</span>
+            </div>
+        `;
+    }
+}
+
+function handleClearState() {
+    if (confirm('Tem certeza que deseja limpar o estado salvo? Esta ação não pode ser desfeita.')) {
+        clearApplicationState();
+        updateStateStatus();
+        showNotification('Estado salvo removido com sucesso!', 'success');
     }
 }
 
