@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Producer - Gerador de Roadmap para Jogos</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="header-main">
+                    <h1><i class="fas fa-gamepad"></i> Producer</h1>
+                    <p>Transforme seu Game Design Document em um roadmap estruturado</p>
+                </div>
+                <div class="header-actions">
+                    <button class="config-btn" id="configBtn" title="Configurações de API">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Upload Section -->
+        <section class="upload-section" id="uploadSection">
+            <div class="upload-container">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <h3>Envie seu Game Design Document</h3>
+                        <p>Arraste e solte seu arquivo GDD aqui ou clique para selecionar</p>
+                        <small>Formatos suportados: PDF, DOC, DOCX, TXT</small>
+                        <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.txt" hidden>
+                        <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                            <i class="fas fa-folder-open"></i> Escolher Arquivo
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="file-info" id="fileInfo" style="display: none;">
+                    <div class="file-details">
+                        <i class="fas fa-file-alt"></i>
+                        <div class="file-text">
+                            <span class="file-name" id="fileName"></span>
+                            <span class="file-size" id="fileSize"></span>
+                        </div>
+                        <button class="remove-file" id="removeFile">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <button class="analyze-btn" id="analyzeBtn">
+                        <i class="fas fa-magic"></i> Analisar GDD
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Loading Section -->
+        <section class="loading-section" id="loadingSection" style="display: none;">
+            <div class="loading-container">
+                <div class="loading-spinner"></div>
+                <h3>Analisando seu GDD...</h3>
+                <p>Nossa IA está processando o documento e gerando o roadmap personalizado</p>
+                <div class="loading-steps">
+                    <div class="step active" id="step1">
+                        <i class="fas fa-file-search"></i>
+                        <span>Lendo documento</span>
+                    </div>
+                    <div class="step" id="step2">
+                        <i class="fas fa-brain"></i>
+                        <span>Analisando conteúdo</span>
+                    </div>
+                    <div class="step" id="step3">
+                        <i class="fas fa-route"></i>
+                        <span>Gerando roadmap</span>
+                    </div>
+                    <div class="step" id="step4">
+                        <i class="fas fa-tasks"></i>
+                        <span>Criando tarefas</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section" id="resultsSection" style="display: none;">
+            <div class="results-header">
+                <h2><i class="fas fa-chart-line"></i> Roadmap do Projeto</h2>
+                <div class="results-actions">
+                    <button class="btn-secondary" id="exportBtn">
+                        <i class="fas fa-download"></i> Exportar
+                    </button>
+                    <button class="btn-primary" id="newAnalysisBtn">
+                        <i class="fas fa-plus"></i> Nova Análise
+                    </button>
+                </div>
+            </div>
+
+            <!-- Project Overview -->
+            <div class="project-overview" id="projectOverview">
+                <div class="overview-card">
+                    <h3><i class="fas fa-info-circle"></i> Visão Geral do Projeto</h3>
+                    <div class="overview-content" id="overviewContent">
+                        <!-- Conteúdo será preenchido dinamicamente -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Roadmap Timeline -->
+            <div class="roadmap-container">
+                <h3><i class="fas fa-road"></i> Timeline de Desenvolvimento</h3>
+                <div class="timeline" id="timeline">
+                    <!-- Timeline será preenchida dinamicamente -->
+                </div>
+            </div>
+
+            <!-- Task Lists -->
+            <div class="tasks-container">
+                <h3><i class="fas fa-list-check"></i> Lista de Tarefas</h3>
+                <div class="tasks-grid" id="tasksGrid">
+                    <!-- Tarefas serão preenchidas dinamicamente -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2024 Producer - Desenvolvido para criar jogos incríveis</p>
+        </footer>
+        
+        <!-- Modal de Configurações -->
+        <div class="modal" id="configModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-cog"></i> Configurações de API</h3>
+                    <button class="modal-close" id="modalClose">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="config-section">
+                        <h4>Chave de API</h4>
+                        <p>Configure sua chave de API para usar o serviço de IA. Atualmente suportamos Google Gemini.</p>
+                        <div class="config-actions">
+                            <button class="btn-primary" id="setApiKeyBtn">
+                                <i class="fas fa-key"></i> Configurar Chave
+                            </button>
+                            <button class="btn-secondary" id="clearApiKeyBtn">
+                                <i class="fas fa-trash"></i> Limpar Chave
+                            </button>
+                        </div>
+                        <div class="api-status" id="apiStatus">
+                            <!-- Status será preenchido dinamicamente -->
+                        </div>
+                    </div>
+                    <div class="config-section">
+                        <h4>Como obter uma chave de API</h4>
+                        <ol>
+                            <li>Acesse <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a></li>
+                            <li>Clique em "Get API key"</li>
+                            <li>Crie um novo projeto ou selecione um existente</li>
+                            <li>Copie a chave gerada e cole aqui</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
