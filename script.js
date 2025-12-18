@@ -195,7 +195,17 @@ async function analyzeDocument() {
         
     } catch (error) {
         console.error('Erro na análise:', error);
-        alert('Ocorreu um erro durante a análise. Verifique sua conexão com a internet e tente novamente.');
+        
+        // Mostrar mensagem de erro mais específica
+        let errorMessage = 'Ocorreu um erro durante a análise.';
+        
+        if (error.message) {
+            errorMessage = error.message;
+        } else if (error.name === 'NetworkError' || error.name === 'TypeError') {
+            errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
+        }
+        
+        alert(errorMessage);
         resetToUpload();
     }
 }
@@ -737,7 +747,8 @@ async function analyzeWithRealAI(content) {
         
     } catch (error) {
         console.error('Erro na API:', error);
-        throw new Error('Falha ao comunicar com a API de IA. Verifique sua chave de API e conexão.');
+        // Re-lançar o erro com a mensagem original preservada
+        throw error;
     }
 }
 
@@ -934,36 +945,186 @@ function handleClearState() {
     }
 }
 
+// Função auxiliar para listar modelos disponíveis
+async function listAvailableModels(apiKey) {
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
+        
+        if (!response.ok) {
+            console.warn('Não foi possível listar modelos disponíveis');
+            return null;
+        }
+        
+        const data = await response.json();
+        if (data.models && Array.isArray(data.models)) {
+            // Filtrar apenas modelos que suportam generateContent
+            const availableModels = data.models
+                .filter(model => {
+                    // Verificar se o modelo suporta generateContent
+                    return model.supportedGenerationMethods && 
+                           model.supportedGenerationMethods.includes('generateContent');
+                })
+                .map(model => ({
+                    name: model.name.replace('models/', ''),
+                    version: 'v1'
+                }));
+            
+            console.log('Modelos disponíveis:', availableModels);
+            return availableModels;
+        }
+        return null;
+    } catch (error) {
+        console.warn('Erro ao listar modelos:', error);
+        return null;
+    }
+}
+
 // Função genérica para chamar APIs de IA
 async function callAIAPI(prompt, apiKey) {
     // Esta função pode ser expandida para suportar diferentes APIs
     // Por enquanto, implementaremos para Google Gemini como exemplo
     
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + apiKey, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            contents: [{
-                parts: [{
-                    text: prompt
-                }]
-            }]
-        }),
-    });
+    // Primeiro, tentar listar modelos disponíveis
+    let availableModels = await listAvailableModels(apiKey);
     
-    if (!response.ok) {
-        throw new Error(`Erro na API: ${response.status} - ${response.statusText}`);
+    // Se não conseguir listar, usar lista padrão com modelos mais recentes
+    if (!availableModels || availableModels.length === 0) {
+        console.log('Usando lista padrão de modelos');
+        availableModels = [
+            { name: 'gemini-2.0-flash-exp', version: 'v1' },
+            { name: 'gemini-1.5-flash', version: 'v1' },
+            { name: 'gemini-1.5-pro', version: 'v1' },
+            { name: 'gemini-pro', version: 'v1' },
+            { name: 'gemini-1.5-flash-latest', version: 'v1' }
+        ];
+    } else {
+        // Ordenar modelos por preferência (flash primeiro, depois pro)
+        availableModels.sort((a, b) => {
+            const aIsFlash = a.name.includes('flash');
+            const bIsFlash = b.name.includes('flash');
+            if (aIsFlash && !bIsFlash) return -1;
+            if (!aIsFlash && bIsFlash) return 1;
+            return 0;
+        });
     }
     
-    const result = await response.json();
+    let lastError = null;
     
-    if (!result.candidates || !result.candidates[0] || !result.candidates[0].content) {
-        throw new Error('Resposta inválida da API');
+    // Tentar cada modelo até encontrar um que funcione
+    for (const model of availableModels) {
+        try {
+            const apiUrl = `https://generativelanguage.googleapis.com/${model.version}/models/${model.name}:generateContent?key=${apiKey}`;
+            
+            console.log(`Tentando modelo: ${model.name} (${model.version})`);
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{
+                            text: prompt
+                        }]
+                    }]
+                }),
+            });
+            
+            if (!response.ok) {
+                // Tentar ler o corpo da resposta para obter detalhes do erro
+                let errorMessage = `Erro ${response.status}: ${response.statusText}`;
+                
+                try {
+                    const errorData = await response.json();
+                    console.error(`Erro com modelo ${model.name} (${model.version}):`, errorData);
+                    
+                    // Extrair mensagem de erro específica da API do Google Gemini
+                    if (errorData.error) {
+                        if (errorData.error.message) {
+                            errorMessage = errorData.error.message;
+                        } else if (errorData.error.status) {
+                            errorMessage = `Erro ${errorData.error.status}: ${errorData.error.message || 'Erro desconhecido'}`;
+                        }
+                        
+                        // Se o erro for que o modelo não foi encontrado, tentar o próximo
+                        if (errorData.error.message && 
+                            (errorData.error.message.includes('is not found') || 
+                             errorData.error.message.includes('not supported'))) {
+                            lastError = new Error(errorMessage);
+                            continue; // Tentar próximo modelo
+                        }
+                        
+                        // Mensagens específicas para erros comuns
+                        if (errorData.error.status === 'PERMISSION_DENIED' || response.status === 403) {
+                            errorMessage = 'Chave de API inválida ou sem permissão. Verifique sua chave nas configurações.';
+                        } else if (errorData.error.status === 'RESOURCE_EXHAUSTED' || response.status === 429) {
+                            errorMessage = 'Limite de requisições excedido. Aguarde alguns minutos e tente novamente.';
+                        } else if (errorData.error.status === 'INVALID_ARGUMENT' || response.status === 400) {
+                            errorMessage = `Erro na requisição: ${errorData.error.message || 'Dados inválidos'}`;
+                        } else if (response.status === 401) {
+                            errorMessage = 'Chave de API inválida ou expirada. Configure uma nova chave nas configurações.';
+                        }
+                    }
+                } catch (parseError) {
+                    console.error('Erro ao processar resposta de erro:', parseError);
+                    // Manter a mensagem padrão se não conseguir parsear
+                }
+                
+                // Se não for erro de modelo não encontrado, lançar o erro
+                if (!errorMessage.includes('is not found') && !errorMessage.includes('not supported')) {
+                    throw new Error(errorMessage);
+                }
+                
+                lastError = new Error(errorMessage);
+                continue; // Tentar próximo modelo
+            }
+            
+            // Se chegou aqui, a requisição foi bem-sucedida
+            const result = await response.json();
+            
+            // Verificar se há erros na resposta mesmo com status 200
+            if (result.error) {
+                console.error('Erro na resposta da API:', result.error);
+                throw new Error(result.error.message || 'Erro na resposta da API');
+            }
+            
+            if (!result.candidates || !result.candidates[0]) {
+                // Verificar se há bloqueios de segurança
+                if (result.promptFeedback && result.promptFeedback.blockReason) {
+                    throw new Error(`Conteúdo bloqueado: ${result.promptFeedback.blockReason}. Tente ajustar o conteúdo do documento.`);
+                }
+                throw new Error('Resposta inválida da API: nenhum candidato retornado');
+            }
+            
+            if (!result.candidates[0].content || !result.candidates[0].content.parts || !result.candidates[0].content.parts[0]) {
+                // Verificar se foi bloqueado
+                if (result.candidates[0].finishReason === 'SAFETY') {
+                    throw new Error('Resposta bloqueada por filtros de segurança. Tente com um documento diferente.');
+                }
+                throw new Error('Resposta inválida da API: estrutura de dados incorreta');
+            }
+            
+            // Sucesso! Retornar o texto
+            console.log(`✅ Modelo ${model.name} (${model.version}) funcionou com sucesso!`);
+            return result.candidates[0].content.parts[0].text;
+            
+        } catch (error) {
+            // Se não for erro de modelo não encontrado, lançar imediatamente
+            if (!error.message || (!error.message.includes('is not found') && !error.message.includes('not supported'))) {
+                throw error;
+            }
+            lastError = error;
+            continue; // Tentar próximo modelo
+        }
     }
     
-    return result.candidates[0].content.parts[0].text;
+    // Se nenhum modelo funcionou, lançar o último erro
+    if (lastError) {
+        throw new Error(`Nenhum modelo disponível funcionou. Último erro: ${lastError.message}. Verifique sua chave de API e tente novamente.`);
+    }
+    
+    throw new Error('Nenhum modelo disponível. Verifique sua chave de API.');
 }
 
 // Funções auxiliares
