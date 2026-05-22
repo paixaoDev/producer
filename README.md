@@ -18,7 +18,7 @@ Um sistema avançado que analisa Game Design Documents (GDD) e gera **roadmaps d
 - **Checkboxes interativos** com persistência local
 
 ### 🤖 **IA Inteligente e Configurável**
-- **Sistema de API flexível** com suporte a múltiplos provedores
+- **Powered by DeepSeek** (DeepSeek-V3 e DeepSeek-R1)
 - **Prompt otimizado** para tarefas granulares e timing realista
 - **Configuração de chaves** através de interface moderna
 - **Fallback inteligente** caso dados da IA sejam incompletos
@@ -33,7 +33,7 @@ Um sistema avançado que analisa Game Design Documents (GDD) e gera **roadmaps d
 
 ### 1. **Configure a API de IA**
 - Clique no ícone de configuração (⚙️) no header
-- Adicione sua chave de API (recomendamos Google Gemini)
+- Adicione sua chave de API do DeepSeek ([platform.deepseek.com](https://platform.deepseek.com))
 - A chave fica salva localmente no seu navegador
 
 ### 2. **Faça Upload do GDD**
@@ -52,33 +52,17 @@ Um sistema avançado que analisa Game Design Documents (GDD) e gera **roadmaps d
 - Progresso salvo automaticamente
 - Exporte resultados em JSON
 
-## 🔧 Configuração de APIs Suportadas
+## 🔧 Configuração de API
 
-### Google Gemini (Recomendado) ⭐
+### DeepSeek (Recomendado) ⭐
 ```javascript
 // Já configurado! Apenas adicione sua chave via interface
-// Acesse: https://aistudio.google.com/
+// Acesse: https://platform.deepseek.com/
 ```
 
-### OpenAI GPT
-```javascript
-// Configure no script.js para usar GPT-4/3.5
-const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    headers: {
-        'Authorization': 'Bearer YOUR_API_KEY'
-    }
-});
-```
-
-### Anthropic Claude
-```javascript
-// Configure no script.js para usar Claude
-const response = await fetch('https://api.anthropic.com/v1/messages', {
-    headers: {
-        'x-api-key': 'YOUR_API_KEY'
-    }
-});
-```
+O sistema tenta automaticamente os modelos disponíveis, nesta ordem:
+- **DeepSeek-V3** (`deepseek-chat`) — rápido e eficiente para a maioria dos projetos
+- **DeepSeek-R1** (`deepseek-reasoner`) — raciocínio avançado para GDDs mais complexos
 
 ## 📊 Exemplo de Resultado
 
@@ -246,7 +230,7 @@ Este projeto está licenciado sob a **MIT License** - veja o arquivo [LICENSE](L
 
 ### Tecnologias Utilizadas
 - **HTML5** + **CSS3** + **JavaScript** vanilla
-- **Google Gemini API** para análise de IA
+- **DeepSeek API** para análise de IA (V3 e R1)
 - **Font Awesome** para ícones
 - **Inter Font** para tipografia
 
