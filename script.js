@@ -3017,6 +3017,22 @@ function updateTeamConfigUI() {
 function populateResults() {
     if (!analysisResult) return;
 
+    // Resetar modo de agrupamento para o padrão ao carregar novos resultados
+    currentTaskGroupMode = 'area';
+    currentTaskAreaFilter = 'all';
+    // Sincronizar UI dos toggles
+    setTimeout(() => {
+        const ga = document.getElementById('groupByArea');
+        const gm = document.getElementById('groupByMilestone');
+        if (ga) ga.classList.add('active');
+        if (gm) gm.classList.remove('active');
+        const filterRow = document.getElementById('tasksFilter');
+        if (filterRow) filterRow.style.opacity = '1';
+        document.querySelectorAll('.filter-btn').forEach((btn, i) => {
+            btn.classList.toggle('active', i === 0);
+        });
+    }, 0);
+
     try {
         populateOverview();
         populateTeamConfigPanel();
@@ -3682,14 +3698,40 @@ function exportEditalText() {
 }
 
 // ============================================================
-// FILTRO DE TAREFAS POR ÁREA
+// FILTRO DE TAREFAS POR ÁREA + AGRUPAMENTO POR MARCO
 // ============================================================
+
+let currentTaskGroupMode = 'area'; // 'area' | 'milestone'
+let currentTaskAreaFilter = 'all';
+
+function setTaskGroupMode(mode) {
+    currentTaskGroupMode = mode;
+    document.getElementById('groupByArea').classList.toggle('active', mode === 'area');
+    document.getElementById('groupByMilestone').classList.toggle('active', mode === 'milestone');
+
+    // Filtro por área fica esmaecido no modo marco
+    const filterRow = document.getElementById('tasksFilter');
+    if (filterRow) filterRow.style.opacity = mode === 'milestone' ? '0.4' : '1';
+
+    if (mode === 'milestone') {
+        populateTasksByMilestone();
+    } else {
+        populateHierarchicalTasks();
+        applyAreaFilter(currentTaskAreaFilter);
+    }
+}
+
 function filterTasks(area) {
-    // Atualizar botões
+    currentTaskAreaFilter = area;
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
 
-    // Mostrar/ocultar objetivos
+    if (currentTaskGroupMode === 'milestone') return; // filtro de área inativo no modo marco
+
+    applyAreaFilter(area);
+}
+
+function applyAreaFilter(area) {
     document.querySelectorAll('.objective-card').forEach(card => {
         if (area === 'all') {
             card.style.display = 'block';
@@ -3698,6 +3740,183 @@ function filterTasks(area) {
             card.style.display = objArea === area ? 'block' : 'none';
         }
     });
+}
+
+function populateTasksByMilestone() {
+    const tasksGrid = document.getElementById('tasksGrid');
+    if (!tasksGrid) return;
+    tasksGrid.innerHTML = '';
+
+    const objList = (scheduledResult || { objectives: analysisResult.objectives || [] }).objectives;
+    const milestones = (analysisResult.milestones || []).slice().sort((a, b) => a.month - b.month);
+
+    if (!objList || objList.length === 0) {
+        tasksGrid.innerHTML = '<p>Nenhum objetivo gerado.</p>';
+        return;
+    }
+
+    const milestoneColors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
+    const milestoneIcons = { vertical_slice: '🎮', alpha: '🔬', beta: '🧪', gold: '🏆', launch: '🚀' };
+    const areaIcons = { programming: '💻', art: '🎨', design: '📋', audio: '🎵', qa: '🧪', production: '📊' };
+    const areaColors = { programming: '#3b82f6', art: '#8b5cf6', design: '#10b981', audio: '#f59e0b', qa: '#ef4444', production: '#6366f1' };
+    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    const typeIcons = { feature: '⚙️', fix: '🐛', art: '🎨', design: '📐', audio: '🔊', test: '🧪', config: '🔧' };
+
+    // Associar objetivo ao menor marco cujo mês >= startMonth do objetivo
+    function getMilestoneForObj(obj) {
+        const start = obj.startMonth || obj.timeline?.startMonth || 1;
+        let match = milestones.find(m => m.month >= start);
+        if (!match) match = milestones[milestones.length - 1];
+        return match;
+    }
+
+    // Agrupar objetivos por marco
+    const groups = new Map();
+    milestones.forEach(m => groups.set(m.id, { milestone: m, objectives: [] }));
+    groups.set('__none__', { milestone: null, objectives: [] });
+
+    objList.forEach(obj => {
+        const m = getMilestoneForObj(obj);
+        const key = m ? m.id : '__none__';
+        if (!groups.has(key)) groups.set(key, { milestone: m, objectives: [] });
+        groups.get(key).objectives.push(obj);
+    });
+
+    let colorIdx = 0;
+    groups.forEach(({ milestone, objectives }) => {
+        if (!milestone && objectives.length === 0) return;
+
+        const color = milestone ? milestoneColors[colorIdx % milestoneColors.length] : '#9ca3af';
+        const icon = milestone ? (milestoneIcons[milestone.type] || '🏁') : '📌';
+        const label = milestone ? milestone.title : 'Sem Marco';
+        const monthLabel = milestone ? `até mês ${milestone.month}` : '';
+
+        const groupHeader = document.createElement('div');
+        groupHeader.className = 'milestone-group-header';
+        groupHeader.style.background = color;
+        groupHeader.innerHTML = `
+            <span class="mg-icon">${icon}</span>
+            <span>${label}</span>
+            ${monthLabel ? `<span class="mg-month">${monthLabel}</span>` : ''}
+        `;
+        tasksGrid.appendChild(groupHeader);
+        colorIdx++;
+
+        if (objectives.length === 0) {
+            const empty = document.createElement('p');
+            empty.style.cssText = 'color:var(--gray-400);font-size:0.85rem;margin:0 0 0.75rem 1rem;';
+            empty.textContent = 'Nenhuma tarefa associada a este marco.';
+            tasksGrid.appendChild(empty);
+            return;
+        }
+
+        objectives.forEach(obj => {
+            const objColor = areaColors[obj.area] || '#6b7280';
+            const objIcon = areaIcons[obj.area] || '📌';
+            const krCount = (obj.keyResults || []).length;
+            const taskCount = (obj.keyResults || []).reduce((t, kr) => t + (kr.tasks || []).length, 0);
+            const msPrefix = `ms_${obj.id}`;
+
+            const objEl = document.createElement('div');
+            objEl.className = 'objective-card';
+            objEl.dataset.objId = obj.id;
+            objEl.innerHTML = `
+                <div class="objective-header">
+                    <div class="objective-icon" style="background:${objColor}">${objIcon}</div>
+                    <div class="objective-info">
+                        <div class="objective-title">${obj.title}</div>
+                        <div class="objective-meta">
+                            <span class="meta-badge priority-${obj.priority}">${obj.priority}</span>
+                            <span class="meta-badge area-badge">${obj.area}</span>
+                            <span class="meta-stat">Meses ${obj.startMonth || obj.timeline?.startMonth || '?'}–${obj.endMonth || obj.timeline?.endMonth || '?'}</span>
+                            <span class="meta-stat">${krCount} KRs · ${taskCount} tarefas</span>
+                        </div>
+                    </div>
+                    <div class="objective-toggle">▼</div>
+                </div>
+                <div class="objective-body" id="body_${msPrefix}">
+                    <div class="okr-list" id="okrs_${msPrefix}"></div>
+                </div>
+            `;
+            tasksGrid.appendChild(objEl);
+
+            objEl.querySelector('.objective-header').addEventListener('click', function() {
+                const body = document.getElementById(`body_${msPrefix}`);
+                const card = body?.closest('.objective-card');
+                if (!body || !card) return;
+                const isOpen = body.classList.toggle('open');
+                const toggle = card.querySelector('.objective-toggle');
+                if (toggle) toggle.textContent = isOpen ? '▲' : '▼';
+            });
+
+            const okrList = objEl.querySelector(`#okrs_${msPrefix}`);
+            (obj.keyResults || []).forEach(kr => {
+                const tasks = kr.tasks || [];
+                const totalPoints = tasks.reduce((t, task) => t + (task.points || task.estimatedDays || 2), 0);
+                const sprintCount = kr.sprintCount || Math.max(1, Math.ceil(totalPoints / SPRINT_CAPACITY_POINTS));
+                const weeksLabel = `${sprintCount} sprint${sprintCount > 1 ? 's' : ''} · ${sprintCount * 2} semanas`;
+                const krPrefix = `ms_${kr.id}`;
+
+                const krEl = document.createElement('div');
+                krEl.className = 'kr-card';
+                krEl.innerHTML = `
+                    <div class="kr-header">
+                        <div class="kr-icon">🎯</div>
+                        <div class="kr-info">
+                            <div class="kr-title">${kr.title}</div>
+                            <div class="kr-meta">
+                                <span class="meta-badge" style="background:rgba(99,102,241,0.1);color:#4f46e5;">${weeksLabel}</span>
+                                <span class="meta-stat">${tasks.length} tarefas · ${totalPoints} pts</span>
+                            </div>
+                        </div>
+                        <div class="kr-toggle">▼</div>
+                    </div>
+                    <div class="kr-body" id="krbody_${krPrefix}">
+                        <div class="task-list sprint-tasks" id="tasks_${krPrefix}"></div>
+                    </div>
+                `;
+                okrList.appendChild(krEl);
+
+                krEl.querySelector('.kr-header').addEventListener('click', function() {
+                    const body = document.getElementById(`krbody_${krPrefix}`);
+                    const card = body?.closest('.kr-card');
+                    if (!body || !card) return;
+                    const isOpen = body.classList.toggle('open');
+                    const toggle = card.querySelector('.kr-toggle');
+                    if (toggle) toggle.textContent = isOpen ? '▲' : '▼';
+                });
+
+                const taskList = krEl.querySelector(`#tasks_${krPrefix}`);
+                const sortedTasks = [...tasks].sort((a, b) => (priorityOrder[a.priority] || 2) - (priorityOrder[b.priority] || 2));
+                sortedTasks.forEach(task => {
+                    const taskEl = document.createElement('div');
+                    taskEl.className = 'sprint-task';
+                    taskEl.dataset.taskId = task.id;
+                    const tIcon = typeIcons[task.type] || '📌';
+                    taskEl.innerHTML = `
+                        <div class="task-checkbox sprint-checkbox"
+                             data-obj="${obj.id}" data-kr="${kr.id}" data-task="${task.id}"
+                             onclick="toggleSprintTask(this)">
+                        </div>
+                        <div class="task-body">
+                            <div class="task-title-row">
+                                <span class="type-icon" title="${task.type}">${tIcon}</span>
+                                <span class="task-title">${task.title}</span>
+                            </div>
+                            <div class="task-meta-row">
+                                <span class="meta-badge priority-${task.priority}">${task.priority}</span>
+                                <span class="days-badge">⏱ ${task.estimatedDays || 2}d · ${task.points || task.estimatedDays || 2}pts</span>
+                                <span class="type-badge">${task.type || 'feature'}</span>
+                            </div>
+                        </div>
+                    `;
+                    taskList.appendChild(taskEl);
+                });
+            });
+        });
+    });
+
+    loadTaskStates();
 }
 
 // ============================================================
