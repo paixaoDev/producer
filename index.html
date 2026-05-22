@@ -9,6 +9,47 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
+    <!-- Tela de configuração de API (aparece quando não há chave salva) -->
+    <div id="apiSetupScreen" style="display: none;">
+        <div class="api-setup-wrapper">
+            <div class="api-setup-card">
+                <div class="api-setup-icon">
+                    <i class="fas fa-gamepad"></i>
+                </div>
+                <h1>Producer</h1>
+                <p class="api-setup-subtitle">Gerador de Roadmap para Jogos com IA</p>
+                <div class="api-setup-divider"></div>
+                <h2>Configure sua chave de API</h2>
+                <p class="api-setup-desc">Para começar, insira sua chave de API do DeepSeek. Ela será salva localmente no seu navegador.</p>
+                <div class="api-setup-form">
+                    <div class="api-input-group">
+                        <label for="apiKeyInput"><i class="fas fa-key"></i> Chave de API DeepSeek</label>
+                        <input
+                            type="password"
+                            id="apiKeyInput"
+                            placeholder="sk-..."
+                            autocomplete="off"
+                            spellcheck="false"
+                        />
+                        <button class="api-toggle-visibility" id="toggleVisibility" title="Mostrar/ocultar chave">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <button class="api-setup-btn" id="saveApiKeyBtn">
+                        <i class="fas fa-arrow-right"></i> Entrar no Producer
+                    </button>
+                </div>
+                <div class="api-setup-help">
+                    <p>Ainda não tem uma chave?</p>
+                    <a href="https://platform.deepseek.com/api-keys" target="_blank">
+                        <i class="fas fa-external-link-alt"></i> Criar chave grátis em platform.deepseek.com
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="appMain" style="display: none;">
     <div class="container">
         <!-- Header -->
         <header class="header">
@@ -16,11 +57,6 @@
                 <div class="header-main">
                     <h1><i class="fas fa-gamepad"></i> Producer</h1>
                     <p>Transforme seu Game Design Document em um roadmap estruturado</p>
-                </div>
-                <div class="header-actions">
-                    <button class="config-btn" id="configBtn" title="Configurações de API">
-                        <i class="fas fa-cog"></i>
-                    </button>
                 </div>
             </div>
         </header>
@@ -59,29 +95,81 @@
             </div>
         </section>
 
+        <!-- GDD Review Section -->
+        <section class="review-section" id="reviewSection" style="display: none;">
+            <div class="review-container">
+                <div class="review-header">
+                    <div class="review-header-text">
+                        <h2><i class="fas fa-magic"></i> GDD Normalizado</h2>
+                        <p>A IA interpretou seu GDD assim. Confira se faz sentido antes de gerar o roadmap.</p>
+                    </div>
+                    <div class="review-actions">
+                        <button class="btn-secondary" id="reviewCancelBtn">
+                            <i class="fas fa-times"></i> Cancelar
+                        </button>
+                        <button class="btn-primary" id="reviewConfirmBtn">
+                            <i class="fas fa-arrow-right"></i> Gerar Roadmap
+                        </button>
+                    </div>
+                </div>
+                <div class="review-grid" id="reviewGrid">
+                    <!-- Preenchido dinamicamente -->
+                </div>
+            </div>
+        </section>
+
         <!-- Loading Section -->
         <section class="loading-section" id="loadingSection" style="display: none;">
             <div class="loading-container">
                 <div class="loading-spinner"></div>
                 <h3>Analisando seu GDD...</h3>
-                <p>Nossa IA está processando o documento e gerando o roadmap personalizado</p>
+                <p id="loadingMessage">Iniciando análise do documento...</p>
                 <div class="loading-steps">
-                    <div class="step active" id="step1">
+                    <div class="step active" id="step0">
+                        <i class="fas fa-magic"></i>
+                        <span>Normalizando GDD</span>
+                    </div>
+                    <div class="step" id="step1">
                         <i class="fas fa-file-search"></i>
-                        <span>Lendo documento</span>
+                        <span>Sub-áreas</span>
                     </div>
                     <div class="step" id="step2">
-                        <i class="fas fa-brain"></i>
-                        <span>Analisando conteúdo</span>
+                        <i class="fas fa-key"></i>
+                        <span>KRs</span>
                     </div>
                     <div class="step" id="step3">
-                        <i class="fas fa-route"></i>
-                        <span>Gerando roadmap</span>
+                        <i class="fas fa-tasks"></i>
+                        <span>Sprints</span>
                     </div>
                     <div class="step" id="step4">
-                        <i class="fas fa-tasks"></i>
-                        <span>Criando tarefas</span>
+                        <i class="fas fa-flag-checkered"></i>
+                        <span>Milestones</span>
                     </div>
+                    <div class="step" id="step5">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Finalizando</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Painel de output ao vivo -->
+            <div class="generation-log" id="generationLog"></div>
+        </section>
+
+        <!-- Tela de erro com retomada -->
+        <section class="resume-section" id="resumeSection" style="display: none;">
+            <div class="resume-container">
+                <div class="resume-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                <h3>Geração interrompida</h3>
+                <p id="resumeErrorMsg">Ocorreu um erro durante a geração.</p>
+                <div class="resume-progress" id="resumeProgress"></div>
+                <div class="resume-actions">
+                    <button class="btn-primary" id="resumeBtn">
+                        <i class="fas fa-play"></i> Continuar de onde parou
+                    </button>
+                    <button class="btn-secondary" id="resumeCancelBtn">
+                        <i class="fas fa-redo"></i> Começar do zero
+                    </button>
                 </div>
             </div>
         </section>
@@ -89,7 +177,7 @@
         <!-- Results Section -->
         <section class="results-section" id="resultsSection" style="display: none;">
             <div class="results-header">
-                <h2><i class="fas fa-chart-line"></i> Roadmap do Projeto</h2>
+                <h2><i class="fas fa-gamepad"></i> <span id="resultsProjectTitle">Roadmap do Projeto</span></h2>
                 <div class="results-actions">
                     <button class="btn-secondary" id="exportBtn">
                         <i class="fas fa-download"></i> Exportar
@@ -100,29 +188,80 @@
                 </div>
             </div>
 
-            <!-- Project Overview -->
+            <!-- 1. Project Overview — compact -->
             <div class="project-overview" id="projectOverview">
-                <div class="overview-card">
-                    <h3><i class="fas fa-info-circle"></i> Visão Geral do Projeto</h3>
-                    <div class="overview-content" id="overviewContent">
-                        <!-- Conteúdo será preenchido dinamicamente -->
+                <div class="overview-compact" id="overviewContent">
+                    <!-- Preenchido dinamicamente -->
+                </div>
+            </div>
+
+            <!-- 2. Roadmap — card central com toggle simples/detalhado -->
+            <div class="roadmap-card" id="roadmapCard">
+                <div class="roadmap-card-header">
+                    <div class="roadmap-card-title">
+                        <i class="fas fa-road"></i>
+                        <span>Roadmap</span>
+                    </div>
+                    <div class="roadmap-card-controls">
+                        <!-- Configuração de equipe inline -->
+                        <div class="team-config-container" id="teamConfigPanel"></div>
+                        <!-- Toggle simples/detalhado -->
+                        <div class="timeline-toggle-group" id="timelineToggleGroup">
+                            <button class="timeline-toggle-btn" id="btnSimple" onclick="setTimelineMode('simple')">
+                                <i class="fas fa-bars"></i> Simples
+                            </button>
+                            <button class="timeline-toggle-btn active" id="btnDetailed" onclick="setTimelineMode('detailed')">
+                                <i class="fas fa-layer-group"></i> Detalhado
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="roadmap-card-body">
+                    <div class="timeline" id="timeline">
+                        <!-- Timeline será preenchida dinamicamente -->
                     </div>
                 </div>
             </div>
 
-            <!-- Roadmap Timeline -->
-            <div class="roadmap-container">
-                <h3><i class="fas fa-road"></i> Timeline de Desenvolvimento</h3>
-                <div class="timeline" id="timeline">
-                    <!-- Timeline será preenchida dinamicamente -->
+            <!-- 3. Marcos do Projeto — cards colapsáveis -->
+            <div class="milestones-container" id="milestonesContainer">
+                <div class="milestones-header">
+                    <h3><i class="fas fa-flag-checkered"></i> Marcos do Projeto</h3>
+                    <span class="milestones-hint">Clique para expandir</span>
+                </div>
+                <div class="milestones-grid" id="milestonesGrid">
+                    <!-- Milestones serão preenchidos dinamicamente -->
                 </div>
             </div>
 
-            <!-- Task Lists -->
+            <!-- 4. Tarefas (Roadmap Detalhado) -->
             <div class="tasks-container">
-                <h3><i class="fas fa-list-check"></i> Lista de Tarefas</h3>
+                <div class="tasks-header-row">
+                    <h3><i class="fas fa-list-check"></i> Tarefas</h3>
+                    <div class="tasks-filter" id="tasksFilter">
+                        <button class="filter-btn active" onclick="filterTasks('all')">Todos</button>
+                        <button class="filter-btn" onclick="filterTasks('programming')">💻 Prog.</button>
+                        <button class="filter-btn" onclick="filterTasks('art')">🎨 Arte</button>
+                        <button class="filter-btn" onclick="filterTasks('design')">📋 Design</button>
+                        <button class="filter-btn" onclick="filterTasks('audio')">🎵 Áudio</button>
+                        <button class="filter-btn" onclick="filterTasks('qa')">🧪 QA</button>
+                    </div>
+                </div>
                 <div class="tasks-grid" id="tasksGrid">
                     <!-- Tarefas serão preenchidas dinamicamente -->
+                </div>
+            </div>
+
+            <!-- Resumo para Edital (colapsado por padrão) -->
+            <div class="edital-container" id="editalContainer">
+                <div class="edital-header-row">
+                    <h3><i class="fas fa-file-contract"></i> Resumo para Edital / Proposta</h3>
+                    <button class="btn-secondary btn-sm" onclick="exportEditalText()">
+                        <i class="fas fa-copy"></i> Copiar texto
+                    </button>
+                </div>
+                <div class="edital-content" id="editalContent">
+                    <!-- Texto do edital será gerado dinamicamente -->
                 </div>
             </div>
         </section>
@@ -132,57 +271,17 @@
             <p>&copy; 2024 Producer - Desenvolvido para criar jogos incríveis</p>
         </footer>
         
-        <!-- Modal de Configurações -->
-        <div class="modal" id="configModal" style="display: none;">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3><i class="fas fa-cog"></i> Configurações de API</h3>
-                    <button class="modal-close" id="modalClose">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <div class="config-section">
-                        <h4>Chave de API</h4>
-                        <p>Configure sua chave de API para usar o serviço de IA. Atualmente suportamos Google Gemini.</p>
-                        <div class="config-actions">
-                            <button class="btn-primary" id="setApiKeyBtn">
-                                <i class="fas fa-key"></i> Configurar Chave
-                            </button>
-                            <button class="btn-secondary" id="clearApiKeyBtn">
-                                <i class="fas fa-trash"></i> Limpar Chave
-                            </button>
-                        </div>
-                        <div class="api-status" id="apiStatus">
-                            <!-- Status será preenchido dinamicamente -->
-                        </div>
-                    </div>
-                    <div class="config-section">
-                        <h4>Estado da Aplicação</h4>
-                        <p>Gerencie o estado salvo automaticamente da sua análise.</p>
-                        <div class="config-actions">
-                            <button class="btn-secondary" id="clearStateBtn">
-                                <i class="fas fa-eraser"></i> Limpar Estado Salvo
-                            </button>
-                        </div>
-                        <div class="state-status" id="stateStatus">
-                            <!-- Status será preenchido dinamicamente -->
-                        </div>
-                    </div>
-                    <div class="config-section">
-                        <h4>Como obter uma chave de API</h4>
-                        <ol>
-                            <li>Acesse <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a></li>
-                            <li>Clique em "Get API key"</li>
-                            <li>Crie um novo projeto ou selecione um existente</li>
-                            <li>Copie a chave gerada e cole aqui</li>
-                        </ol>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 
+    </div><!-- /appMain -->
+
+    <!-- PDF.js para extração de texto de PDFs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+    </script>
     <script src="script.js"></script>
 </body>
 </html>
