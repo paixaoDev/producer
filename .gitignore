@@ -1,0 +1,17 @@
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Agentes e gerados
+AGENTS.md
+gerados/
+
+# Dependências
+node_modules/
+
+# Variáveis de ambiente
+.env
+.env.local
+
+# Logs
+*.log
