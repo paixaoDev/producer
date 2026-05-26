@@ -50,6 +50,29 @@
     </div>
 
     <div id="appMain" style="display: none;">
+
+    <!-- Sidebar de Projetos -->
+    <div id="projectsSidebar" class="projects-sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-title"><i class="fas fa-folder-open"></i> Projetos</span>
+            <button class="sidebar-new-btn" id="newProjectBtn" title="Novo Projeto">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+        <div class="sidebar-list" id="projectsList">
+            <!-- Preenchido dinamicamente -->
+        </div>
+    </div>
+
+    <!-- Overlay para fechar sidebar no mobile -->
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <!-- Botão flutuante para abrir sidebar -->
+    <button id="sidebarToggleBtn" class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Meus Projetos">
+        <i class="fas fa-folder-open"></i>
+        <span id="sidebarProjectCount" class="sidebar-count" style="display:none">0</span>
+    </button>
+
     <div class="container">
         <!-- Header -->
         <header class="header">
@@ -179,6 +202,9 @@
             <div class="results-header">
                 <h2><i class="fas fa-gamepad"></i> <span id="resultsProjectTitle">Roadmap do Projeto</span></h2>
                 <div class="results-actions">
+                    <button class="btn-save-project" id="saveProjectBtn" onclick="saveCurrentProject()">
+                        <i class="fas fa-save"></i> <span id="saveProjectBtnLabel">Salvar Projeto</span>
+                    </button>
                     <button class="btn-secondary" id="exportBtn">
                         <i class="fas fa-download"></i> Exportar
                     </button>

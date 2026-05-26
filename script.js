@@ -1240,6 +1240,10 @@ function showApp() {
     document.getElementById('appMain').style.display = 'block';
     initializeEventListeners();
 
+    // Inicializa sidebar de projetos
+    renderSidebar();
+    updateSaveBtn();
+
     // Se há progresso de geração interrompida, oferece retomar
     if (store.hasProgress()) {
         const progress = store.getProgress();
@@ -2972,6 +2976,8 @@ function showResults() {
     recomputeSchedule();   // calcula scheduledResult antes de renderizar
     populateResults();
     saveApplicationState();
+    // Atualiza botão salvar para refletir se há projeto ativo
+    if (typeof updateSaveBtn === 'function') updateSaveBtn();
 }
 
 /**
@@ -4058,6 +4064,10 @@ function resetToUpload() {
     analysisResult = null;
     clearFile();
     clearApplicationState();
+    // Ao voltar para upload sem projeto ativo, limpa referência do projeto ativo
+    // (não deletamos o projeto, só desviculamos o contexto atual)
+    if (typeof setActiveProjectId === 'function') setActiveProjectId(null);
+    if (typeof updateSaveBtn === 'function') updateSaveBtn();
 
     uploadSection.style.display = 'block';
     loadingSection.style.display = 'none';
@@ -4395,3 +4405,372 @@ notifStyle.textContent = `
     }
 `;
 document.head.appendChild(notifStyle);
+
+// ============================================================
+// SISTEMA DE MÚLTIPLOS PROJETOS
+// ============================================================
+
+const PROJECTS_KEY = 'producer_projects_v1';
+const ACTIVE_PROJECT_KEY = 'producer_active_project';
+
+// Retorna todos os projetos salvos
+function getAllProjects() {
+    try {
+        const raw = localStorage.getItem(PROJECTS_KEY) || sessionStorage.getItem(PROJECTS_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+}
+
+// Persiste todos os projetos
+function saveAllProjects(projects) {
+    try {
+        const json = JSON.stringify(projects);
+        try { localStorage.setItem(PROJECTS_KEY, json); } catch { sessionStorage.setItem(PROJECTS_KEY, json); }
+    } catch (e) { console.error('Erro ao salvar projetos:', e); }
+}
+
+// ID do projeto ativo
+function getActiveProjectId() {
+    try { return localStorage.getItem(ACTIVE_PROJECT_KEY) || sessionStorage.getItem(ACTIVE_PROJECT_KEY) || null; } catch { return null; }
+}
+
+function setActiveProjectId(id) {
+    try {
+        if (id) { try { localStorage.setItem(ACTIVE_PROJECT_KEY, id); } catch { sessionStorage.setItem(ACTIVE_PROJECT_KEY, id); } }
+        else { try { localStorage.removeItem(ACTIVE_PROJECT_KEY); } catch {} try { sessionStorage.removeItem(ACTIVE_PROJECT_KEY); } catch {} }
+    } catch {}
+}
+
+// Gera ID único
+function genProjectId() {
+    return 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+}
+
+// Conta tarefas concluídas e total usando o taskProgress salvo
+function countTasks(analysis, taskProgress) {
+    let total = 0, done = 0;
+    if (!analysis || !analysis.objectives) return { total: 0, done: 0 };
+    for (const obj of analysis.objectives) {
+        for (const kr of (obj.keyResults || [])) {
+            for (const task of (kr.tasks || [])) {
+                total++;
+                // Usa taskProgress se disponível (mais confiável que _completed)
+                if (taskProgress) {
+                    const key = `task_${obj.id}_${kr.id}_${task.id}`;
+                    if (taskProgress[key] === true) done++;
+                } else if (task._completed) {
+                    done++;
+                }
+            }
+        }
+    }
+    return { total, done };
+}
+
+// Salva o projeto atual (análise + equipe + scheduled)
+function saveCurrentProject() {
+    if (!analysisResult) {
+        showNotification('Nenhum roadmap para salvar.', 'error');
+        return;
+    }
+
+    const projects = getAllProjects();
+    const existingId = getActiveProjectId();
+
+    // Captura o progresso de tarefas marcadas pelo usuário
+    const taskProgress = captureTaskProgress();
+
+    const projectData = {
+        analysisResult: JSON.parse(JSON.stringify(analysisResult)), // deep clone
+        teamConfig: { ...teamConfig },
+        scheduledResult: scheduledResult ? JSON.parse(JSON.stringify(scheduledResult)) : null,
+        taskProgress,
+        savedAt: Date.now(),
+        version: '1.0'
+    };
+
+    let projectId = existingId;
+
+    if (projectId && projects[projectId]) {
+        // Atualiza projeto existente
+        projects[projectId].data = projectData;
+        projects[projectId].savedAt = Date.now();
+        showNotification(`"${projects[projectId].name}" atualizado!`, 'success');
+    } else {
+        // Cria novo projeto
+        projectId = genProjectId();
+        const title = analysisResult.overview?.title || 'Projeto sem nome';
+        projects[projectId] = {
+            id: projectId,
+            name: title,
+            genre: analysisResult.overview?.genre || '',
+            createdAt: Date.now(),
+            savedAt: Date.now(),
+            data: projectData
+        };
+        setActiveProjectId(projectId);
+        showNotification(`"${title}" salvo!`, 'success');
+    }
+
+    saveAllProjects(projects);
+    renderSidebar();
+    updateSaveBtn();
+}
+
+// Carrega um projeto e exibe o roadmap
+function loadProject(projectId) {
+    const projects = getAllProjects();
+    const project = projects[projectId];
+    if (!project) { showNotification('Projeto não encontrado.', 'error'); return; }
+
+    const data = project.data;
+
+    // Restaura estado
+    analysisResult = data.analysisResult;
+    if (data.teamConfig) {
+        Object.assign(teamConfig, data.teamConfig);
+    }
+
+    // Restaura progresso de tarefas
+    if (data.taskProgress) {
+        restoreTaskProgress(data.taskProgress);
+    }
+
+    // Mostra resultados
+    setActiveProjectId(projectId);
+    showResults();
+    renderSidebar();
+    updateSaveBtn();
+    closeSidebar();
+    showNotification(`"${project.name}" carregado!`, 'success');
+}
+
+// Renomeia um projeto
+function renameProject(projectId, event) {
+    event.stopPropagation();
+    const projects = getAllProjects();
+    if (!projects[projectId]) return;
+
+    const currentName = projects[projectId].name;
+    const newName = prompt('Nome do projeto:', currentName);
+    if (newName && newName.trim() && newName.trim() !== currentName) {
+        projects[projectId].name = newName.trim();
+        saveAllProjects(projects);
+        renderSidebar();
+        showNotification('Projeto renomeado!', 'success');
+    }
+}
+
+// Deleta um projeto
+function deleteProject(projectId, event) {
+    event.stopPropagation();
+    const projects = getAllProjects();
+    const name = projects[projectId]?.name || 'este projeto';
+
+    if (!confirm(`Deletar "${name}"? Esta ação não pode ser desfeita.`)) return;
+
+    delete projects[projectId];
+    saveAllProjects(projects);
+
+    // Se era o ativo, limpa
+    if (getActiveProjectId() === projectId) {
+        setActiveProjectId(null);
+        updateSaveBtn();
+    }
+
+    renderSidebar();
+    showNotification(`"${name}" deletado.`, 'success');
+}
+
+// Captura o estado de conclusão de todas as tarefas da UI
+// Usa o mesmo esquema de chave que saveTaskState: task_${obj}_${kr}_${task}
+function captureTaskProgress() {
+    const progress = {};
+    const checkboxes = document.querySelectorAll('.sprint-checkbox[data-obj][data-kr][data-task]');
+    checkboxes.forEach(cb => {
+        const key = `task_${cb.dataset.obj}_${cb.dataset.kr}_${cb.dataset.task}`;
+        progress[key] = cb.classList.contains('checked');
+    });
+    return progress;
+}
+
+// Aplica o progresso de tarefas salvo restaurando no localStorage (loadTaskStates() vai buscar de lá)
+function restoreTaskProgress(progress) {
+    if (!progress) return;
+    // Salva cada entrada no localStorage para que loadTaskStates() restaure a UI
+    for (const [key, completed] of Object.entries(progress)) {
+        try { (window.localStorage || window.sessionStorage).setItem(key, completed.toString()); } catch {}
+    }
+}
+
+// Gera uma chave estável para uma tarefa (não usada internamente, mas mantida para compatibilidade)
+function taskKeyFor(obj, kr, task) {
+    return `task_${obj.id}_${kr.id}_${task.id}`;
+}
+
+// Atualiza aparência do botão Salvar
+function updateSaveBtn() {
+    const btn = document.getElementById('saveProjectBtn');
+    const label = document.getElementById('saveProjectBtnLabel');
+    if (!btn) return;
+
+    const projects = getAllProjects();
+    const activeId = getActiveProjectId();
+
+    if (activeId && projects[activeId]) {
+        btn.classList.add('saved');
+        if (label) label.textContent = 'Atualizar Projeto';
+    } else {
+        btn.classList.remove('saved');
+        if (label) label.textContent = 'Salvar Projeto';
+    }
+}
+
+// Renderiza a lista de projetos na sidebar
+function renderSidebar() {
+    const list = document.getElementById('projectsList');
+    const countBadge = document.getElementById('sidebarProjectCount');
+    if (!list) return;
+
+    const projects = getAllProjects();
+    const ids = Object.keys(projects).sort((a, b) => (projects[b].savedAt || 0) - (projects[a].savedAt || 0));
+    const activeId = getActiveProjectId();
+
+    // Atualiza badge
+    if (countBadge) {
+        if (ids.length > 0) {
+            countBadge.textContent = ids.length;
+            countBadge.style.display = 'inline-block';
+        } else {
+            countBadge.style.display = 'none';
+        }
+    }
+
+    if (ids.length === 0) {
+        list.innerHTML = `
+            <div class="sidebar-empty">
+                <i class="fas fa-folder-open"></i>
+                <p>Nenhum projeto salvo ainda.</p>
+                <p>Gere um roadmap e clique em <strong>Salvar Projeto</strong>.</p>
+            </div>`;
+        return;
+    }
+
+    list.innerHTML = ids.map(id => {
+        const p = projects[id];
+        const { total, done } = countTasks(p.data?.analysisResult, p.data?.taskProgress);
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const date = new Date(p.savedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const isActive = id === activeId;
+
+        return `
+            <div class="project-item ${isActive ? 'active' : ''}" onclick="loadProject('${id}')">
+                <div class="project-item-header">
+                    <i class="fas fa-gamepad project-item-icon"></i>
+                    <span class="project-item-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+                    <div class="project-item-actions">
+                        <button class="project-item-btn" onclick="renameProject('${id}', event)" title="Renomear">
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                        <button class="project-item-btn delete" onclick="deleteProject('${id}', event)" title="Deletar">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="project-item-meta">
+                    <span class="project-item-genre">${escapeHtml(p.genre || 'Sem gênero')} · ${date}</span>
+                    ${total > 0 ? `<span class="project-item-progress">${done}/${total}</span>` : ''}
+                </div>
+                ${total > 0 ? `<div class="project-item-bar"><div class="project-item-bar-fill" style="width:${pct}%"></div></div>` : ''}
+            </div>`;
+    }).join('');
+}
+
+function escapeHtml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// Abre/fecha sidebar
+function toggleSidebar() {
+    const sidebar = document.getElementById('projectsSidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (!sidebar) return;
+    const isOpen = sidebar.classList.contains('open');
+    if (isOpen) {
+        closeSidebar();
+    } else {
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
+        renderSidebar();
+    }
+}
+
+function closeSidebar() {
+    const sidebar = document.getElementById('projectsSidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+}
+
+// Botão "Novo Projeto" na sidebar: limpa estado e vai para upload
+document.addEventListener('DOMContentLoaded', () => {
+    const newBtn = document.getElementById('newProjectBtn');
+    if (newBtn) {
+        newBtn.addEventListener('click', () => {
+            if (analysisResult && !confirm('Abrir novo projeto? O roadmap atual não salvo será perdido.')) return;
+            setActiveProjectId(null);
+            analysisResult = null;
+            scheduledResult = null;
+            Object.assign(teamConfig, { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 });
+            resetToUpload();
+            closeSidebar();
+            updateSaveBtn();
+        });
+    }
+
+    // Inicializa sidebar e badge ao entrar no app
+    const origShowApp = window._origShowApp;
+    renderSidebar();
+});
+
+// Hook: auto-salva progresso de tarefas no projeto ativo ao marcar/desmarcar
+// sprint-checkbox usa onclick, não change — interceptamos via MutationObserver após toggleSprintTask
+const _origToggleSprintTask = window.toggleSprintTask;
+// Substituímos toggleSprintTask para incluir auto-save ao final
+window.toggleSprintTask = function(checkbox) {
+    // Chama o comportamento original
+    if (typeof _origToggleSprintTask === 'function') {
+        _origToggleSprintTask(checkbox);
+    } else {
+        // fallback inline se a função ainda não existia no momento do load
+        const objId = checkbox.dataset.obj;
+        const krId = checkbox.dataset.kr;
+        const taskId = checkbox.dataset.task;
+        checkbox.classList.toggle('checked');
+        const taskTitle = checkbox.closest('.sprint-task')?.querySelector('.task-title');
+        if (taskTitle) taskTitle.classList.toggle('completed');
+        try { (window.localStorage || window.sessionStorage).setItem(`task_${objId}_${krId}_${taskId}`, checkbox.classList.contains('checked').toString()); } catch {}
+        updateKRProgress(krId);
+    }
+
+    // Auto-salva no projeto ativo
+    const activeId = getActiveProjectId();
+    if (!activeId) return;
+    const projects = getAllProjects();
+    if (!projects[activeId]) return;
+    projects[activeId].data.taskProgress = captureTaskProgress();
+    saveAllProjects(projects);
+
+    // Atualiza barra de progresso na sidebar se estiver aberta
+    const sidebar = document.getElementById('projectsSidebar');
+    if (sidebar && sidebar.classList.contains('open')) renderSidebar();
+};
+
+// Renderiza sidebar ao abrir app
+(function initProjectsSidebar() {
+    const orig = typeof showApp === 'function' ? showApp : null;
+})();
