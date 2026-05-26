@@ -4787,15 +4787,17 @@ let _pendingImportData = null; // dados aguardando confirmação do usuário
 // Wira o input de JSON ao inicializar o app
 function initJsonImport() {
     const input = document.getElementById('jsonImportInput');
-    if (!input) return;
+    if (!input || input._jsonImportBound) return;
+    input._jsonImportBound = true; // evita registrar listener duplicado
+
     input.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        // Reset para permitir importar o mesmo arquivo duas vezes
-        input.value = '';
 
         const reader = new FileReader();
         reader.onload = (evt) => {
+            // Reset APÓS a leitura, para permitir importar o mesmo arquivo novamente
+            input.value = '';
             try {
                 const parsed = JSON.parse(evt.target.result);
                 handleImportedJson(parsed, file.name);

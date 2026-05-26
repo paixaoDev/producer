@@ -99,7 +99,7 @@
                             <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
                                 <i class="fas fa-folder-open"></i> Escolher GDD
                             </button>
-                            <button class="upload-btn upload-btn-import" onclick="document.getElementById('jsonImportInput').click()">
+                            <button class="upload-btn upload-btn-import" onclick="event.stopPropagation(); document.getElementById('jsonImportInput').click()">
                                 <i class="fas fa-file-import"></i> Importar JSON
                             </button>
                         </div>
