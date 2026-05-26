@@ -94,9 +94,15 @@
                         <p>Arraste e solte seu arquivo GDD aqui ou clique para selecionar</p>
                         <small>Formatos suportados: PDF, DOC, DOCX, TXT</small>
                         <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.txt" hidden>
-                        <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
-                            <i class="fas fa-folder-open"></i> Escolher Arquivo
-                        </button>
+                        <input type="file" id="jsonImportInput" accept=".json" hidden>
+                        <div class="upload-btns">
+                            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                                <i class="fas fa-folder-open"></i> Escolher GDD
+                            </button>
+                            <button class="upload-btn upload-btn-import" onclick="document.getElementById('jsonImportInput').click()">
+                                <i class="fas fa-file-import"></i> Importar JSON
+                            </button>
+                        </div>
                     </div>
                 </div>
                 
@@ -205,6 +211,9 @@
                     <button class="btn-save-project" id="saveProjectBtn" onclick="saveCurrentProject()">
                         <i class="fas fa-save"></i> <span id="saveProjectBtnLabel">Salvar Projeto</span>
                     </button>
+                    <button class="btn-secondary" id="importJsonBtn" onclick="document.getElementById('jsonImportInput').click()">
+                        <i class="fas fa-file-import"></i> Importar JSON
+                    </button>
                     <button class="btn-secondary" id="exportBtn">
                         <i class="fas fa-download"></i> Exportar
                     </button>
@@ -306,6 +315,26 @@
     </div>
 
     </div><!-- /appMain -->
+
+    <!-- Modal de confirmação de importação de JSON -->
+    <div id="importModalOverlay" class="import-modal-overlay">
+        <div class="import-modal">
+            <div class="import-modal-icon"><i class="fas fa-file-import"></i></div>
+            <h3>Importar Roadmap</h3>
+            <div class="import-modal-meta" id="importModalMeta">
+                <!-- Preenchido dinamicamente -->
+            </div>
+            <p class="import-modal-warning" id="importModalWarning"></p>
+            <div class="import-modal-actions">
+                <button class="btn-import-cancel" onclick="closeImportModal()">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+                <button class="btn-import-confirm" id="importConfirmBtn">
+                    <i class="fas fa-check"></i> Importar
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- PDF.js para extração de texto de PDFs -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>

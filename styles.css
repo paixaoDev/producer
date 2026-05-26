@@ -3085,3 +3085,134 @@ body {
 .project-name-input:focus {
     background: rgba(99,102,241,0.2);
 }
+
+/* ============================================================
+   IMPORTAÇÃO DE JSON
+   ============================================================ */
+
+.upload-btns {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 4px;
+}
+
+.upload-btn-import {
+    background: transparent;
+    border: 2px solid rgba(99,102,241,0.5);
+    color: var(--primary-color);
+}
+
+.upload-btn-import:hover {
+    background: rgba(99,102,241,0.12);
+    border-color: var(--primary-color);
+}
+
+/* Import modal overlay */
+.import-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.import-modal-overlay.active {
+    display: flex;
+}
+
+.import-modal {
+    background: var(--gray-900);
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 480px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    animation: modalIn 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+@keyframes modalIn {
+    from { transform: scale(0.85); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+}
+
+.import-modal-icon {
+    font-size: 2.5rem;
+    color: var(--primary-color);
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+.import-modal h3 {
+    color: var(--white);
+    font-size: 1.1rem;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.import-modal-meta {
+    background: rgba(99,102,241,0.1);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 16px 0;
+    font-size: 0.82rem;
+    color: var(--gray-300);
+    line-height: 1.6;
+}
+
+.import-modal-meta strong {
+    color: var(--white);
+    display: block;
+    font-size: 1rem;
+    margin-bottom: 4px;
+}
+
+.import-modal-meta span {
+    display: inline-block;
+    margin-right: 12px;
+}
+
+.import-modal-warning {
+    font-size: 0.78rem;
+    color: var(--warning-color);
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.import-modal-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.import-modal-actions button {
+    flex: 1;
+    padding: 11px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.2s, transform 0.15s;
+}
+
+.import-modal-actions button:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+
+.btn-import-confirm {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-import-cancel {
+    background: var(--gray-700);
+    color: var(--gray-300);
+}

@@ -1306,6 +1306,9 @@ function initializeEventListeners() {
     exportBtn.addEventListener('click', exportResults);
     newAnalysisBtn.addEventListener('click', resetToUpload);
 
+    // Input de importação de JSON
+    initJsonImport();
+
     // Botões da tela de retomada
     const resumeBtn = document.getElementById('resumeBtn');
     const resumeCancelBtn = document.getElementById('resumeCancelBtn');
@@ -4774,3 +4777,210 @@ window.toggleSprintTask = function(checkbox) {
 (function initProjectsSidebar() {
     const orig = typeof showApp === 'function' ? showApp : null;
 })();
+
+// ============================================================
+// IMPORTAÇÃO DE JSON
+// ============================================================
+
+let _pendingImportData = null; // dados aguardando confirmação do usuário
+
+// Wira o input de JSON ao inicializar o app
+function initJsonImport() {
+    const input = document.getElementById('jsonImportInput');
+    if (!input) return;
+    input.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        // Reset para permitir importar o mesmo arquivo duas vezes
+        input.value = '';
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const parsed = JSON.parse(evt.target.result);
+                handleImportedJson(parsed, file.name);
+            } catch (err) {
+                showNotification('Arquivo JSON inválido ou corrompido.', 'error');
+            }
+        };
+        reader.readAsText(file, 'UTF-8');
+    });
+}
+
+/**
+ * Detecta o formato do JSON e normaliza para analysisResult.
+ *
+ * Formatos suportados:
+ *  A) Export do Producer (exportResults) — tem "metadata" + "objectives" mas sem teamConfig
+ *  B) Projeto salvo (saveCurrentProject) — tem "data.analysisResult" + "data.teamConfig"
+ *  C) analysisResult puro — tem "overview" + "objectives" diretamente
+ */
+function handleImportedJson(json, filename) {
+    let detected = null;
+    let analysisData = null;
+    let teamData = null;
+    let taskProgressData = null;
+    let projectName = filename.replace(/\.json$/i, '');
+
+    // Formato B: projeto salvo pelo sistema de projetos
+    if (json.data && json.data.analysisResult && json.data.analysisResult.objectives) {
+        detected = 'projeto_salvo';
+        analysisData = json.data.analysisResult;
+        teamData = json.data.teamConfig || null;
+        taskProgressData = json.data.taskProgress || null;
+        projectName = json.name || projectName;
+    }
+    // Formato A: export do Producer (tem "metadata" e "objectives" mas sem overview direto às vezes)
+    else if (json.metadata && json.objectives) {
+        detected = 'export_producer';
+        analysisData = normalizeExportToAnalysis(json);
+    }
+    // Formato C: analysisResult puro
+    else if (json.overview && json.objectives) {
+        detected = 'analysis_direto';
+        analysisData = json;
+    }
+    // Formato D: dump completo com múltiplos projetos (producer_projects_v1)
+    else if (typeof json === 'object' && !Array.isArray(json)) {
+        const keys = Object.keys(json);
+        const firstVal = json[keys[0]];
+        if (firstVal && firstVal.data && firstVal.data.analysisResult) {
+            detected = 'dump_multiplos';
+            // Mostra seletor se tiver mais de 1 projeto
+            showProjectPickerModal(json);
+            return;
+        }
+    }
+
+    if (!detected || !analysisData) {
+        showNotification('Formato de JSON não reconhecido. Use um arquivo exportado pelo Producer.', 'error');
+        return;
+    }
+
+    // Monta metadados para o modal de confirmação
+    const title = analysisData.overview?.title || projectName;
+    const genre = analysisData.overview?.genre || analysisData.genreLabel || '—';
+    const totalObjs = (analysisData.objectives || []).length;
+    const totalTasks = (analysisData.objectives || []).reduce((s, o) =>
+        s + (o.keyResults || []).reduce((ss, kr) => ss + (kr.tasks || []).length, 0), 0);
+    const months = analysisData.totalDurationMonths || '—';
+
+    const formatLabel = {
+        projeto_salvo: 'Projeto salvo pelo Producer',
+        export_producer: 'Export do Producer',
+        analysis_direto: 'analysisResult direto',
+    }[detected];
+
+    document.getElementById('importModalMeta').innerHTML = `
+        <strong>${escapeHtml(title)}</strong>
+        <span><i class="fas fa-gamepad"></i> ${escapeHtml(genre)}</span>
+        <span><i class="fas fa-flag"></i> ${totalObjs} objetivos</span>
+        <span><i class="fas fa-tasks"></i> ${totalTasks} tarefas</span>
+        <span><i class="fas fa-calendar"></i> ${months} meses</span>
+        <br><small style="color:var(--gray-500);margin-top:6px;display:block">Formato detectado: ${formatLabel}</small>
+    `;
+
+    const warning = analysisResult
+        ? 'O roadmap atual será substituído. Salve-o antes se quiser mantê-lo.'
+        : '';
+    document.getElementById('importModalWarning').textContent = warning;
+
+    // Guarda dados para confirmar
+    _pendingImportData = { analysisData, teamData, taskProgressData, projectName: title };
+
+    document.getElementById('importConfirmBtn').onclick = confirmImport;
+    document.getElementById('importModalOverlay').classList.add('active');
+}
+
+function confirmImport() {
+    if (!_pendingImportData) return;
+    const { analysisData, teamData, taskProgressData, projectName } = _pendingImportData;
+
+    // Aplica ao estado global
+    analysisResult = analysisData;
+    if (teamData) Object.assign(teamConfig, teamData);
+
+    // Aplica progresso de tarefas se existir
+    if (taskProgressData) restoreTaskProgress(taskProgressData);
+
+    // Desvincula de projeto ativo (é um import novo)
+    setActiveProjectId(null);
+    updateSaveBtn();
+
+    closeImportModal();
+    showResults();
+    showNotification(`"${projectName}" importado com sucesso!`, 'success');
+    _pendingImportData = null;
+}
+
+function closeImportModal() {
+    document.getElementById('importModalOverlay').classList.remove('active');
+    _pendingImportData = null;
+}
+
+/**
+ * Converte o formato de export (exportResults) para analysisResult completo.
+ * O export omite alguns campos — preenchemos com defaults.
+ */
+function normalizeExportToAnalysis(exportJson) {
+    const meta = exportJson.metadata || {};
+    return {
+        overview: exportJson.overview || {
+            title: meta.title || 'Projeto Importado',
+            genre: meta.genre || '',
+        },
+        genreLabel: meta.genre || '',
+        totalDurationMonths: meta.totalMonths || 12,
+        milestones: exportJson.milestones || [],
+        editalSummary: exportJson.editalSummary || null,
+        objectives: (exportJson.objectives || []).map(obj => ({
+            id: obj.id || ('obj_' + Math.random().toString(36).slice(2)),
+            title: obj.title || '',
+            description: obj.description || '',
+            area: obj.area || 'programming',
+            priority: obj.priority || 'medium',
+            startMonth: obj.timeline?.startMonth ?? null,
+            endMonth: obj.timeline?.endMonth ?? null,
+            keyResults: (obj.keyResults || []).map(kr => ({
+                id: kr.id || ('kr_' + Math.random().toString(36).slice(2)),
+                title: kr.title || '',
+                description: kr.description || '',
+                estimatedWeeks: kr.estimatedWeeks || 2,
+                dependencies: kr.dependencies || [],
+                tasks: (kr.tasks || []).map(t => ({
+                    id: t.id || ('t_' + Math.random().toString(36).slice(2)),
+                    title: t.title || '',
+                    estimatedDays: t.estimatedDays || 2,
+                    points: t.estimatedDays || 2,
+                    priority: t.priority || 'medium',
+                    type: t.type || 'feature',
+                }))
+            }))
+        }))
+    };
+}
+
+/**
+ * Se o JSON contém múltiplos projetos (dump do localStorage),
+ * mostra um seletor simples via prompt para o usuário escolher qual importar.
+ */
+function showProjectPickerModal(projectsMap) {
+    const ids = Object.keys(projectsMap);
+    const names = ids.map((id, i) => `${i + 1}. ${projectsMap[id].name || id}`).join('\n');
+    const choice = prompt(`O arquivo contém ${ids.length} projetos. Digite o número do que deseja importar:\n\n${names}`);
+    const idx = parseInt(choice) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= ids.length) {
+        showNotification('Seleção inválida.', 'error');
+        return;
+    }
+    const proj = projectsMap[ids[idx]];
+    handleImportedJson(proj, proj.name || 'projeto');
+}
+
+// Fecha modal ao clicar fora
+document.addEventListener('DOMContentLoaded', () => {
+    const overlay = document.getElementById('importModalOverlay');
+    if (overlay) overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeImportModal();
+    });
+});
