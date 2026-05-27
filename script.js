@@ -5365,6 +5365,34 @@ function workSaveBoardSelections() {
         saveAllProjects(projects);
     } catch {}
 }
+// ── Persistência dos filtros do backlog ───────────────────────
+function backlogFiltersKey() {
+    const id = getActiveProjectId();
+    return id ? `backlog_filters_${id}` : 'backlog_filters_default';
+}
+function backlogSaveFilters() {
+    try {
+        const state = {
+            roles: [...workSelectedRoles],
+            milestone: workSelectedMilestone,
+            groupMode: backlogGroupMode
+        };
+        localStorage.setItem(backlogFiltersKey(), JSON.stringify(state));
+    } catch {}
+}
+function backlogLoadFilters() {
+    try {
+        const raw = localStorage.getItem(backlogFiltersKey());
+        if (!raw) return;
+        const state = JSON.parse(raw);
+        if (Array.isArray(state.roles) && state.roles.length > 0) {
+            workSelectedRoles = new Set(state.roles.filter(r => ALL_ROLES.includes(r)));
+        }
+        if (state.milestone) workSelectedMilestone = state.milestone;
+        if (state.groupMode) backlogGroupMode = state.groupMode;
+    } catch {}
+}
+
 function workTaskKey(objId, krId, taskId) {
     return `${objId}__${krId}__${taskId}`;
 }
@@ -5454,6 +5482,7 @@ function workInit() {
     workSelectedRoles = new Set(ALL_ROLES);
     workSelectedMilestone = null;
     backlogGroupMode = 'sprint';
+    backlogLoadFilters(); // restaura área e marco selecionados
     workUpdateAvatarUI();
     workSetView('backlog');
     setWorkspaceTab('timeline');
@@ -5554,18 +5583,21 @@ function workToggleRole(role) {
     } else {
         workSelectedRoles.add(role);
     }
+    backlogSaveFilters();
     workUpdateAvatarUI();
     workRefreshCurrentView();
 }
 
 function workSelectAllRoles() {
     workSelectedRoles = new Set(ALL_ROLES);
+    backlogSaveFilters();
     workUpdateAvatarUI();
     workRefreshCurrentView();
 }
 
 function workClearRoles() {
     workSelectedRoles = new Set([ALL_ROLES[0]]);
+    backlogSaveFilters();
     workUpdateAvatarUI();
     workRefreshCurrentView();
 }
@@ -5663,6 +5695,7 @@ function workBuildBacklogItemsForMilestoneFilter(objectives, milestones, selecte
 // ── Filtro de marco ───────────────────────────────────────────
 function workSetMilestoneFilter(msId) {
     workSelectedMilestone = (workSelectedMilestone === msId) ? null : msId;
+    backlogSaveFilters();
     workUpdateMilestoneFilterUI();
     workRenderBacklog();
 }
@@ -5817,6 +5850,7 @@ function workRefreshCurrentView() {
 // ── BACKLOG ───────────────────────────────────────────────────
 function workSetGroupMode(mode) {
     backlogGroupMode = mode;
+    backlogSaveFilters();
     document.querySelectorAll('.backlog-group-toggle button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.mode === mode);
     });
@@ -5826,6 +5860,21 @@ function workSetGroupMode(mode) {
 function workRenderBacklog() {
     const container = document.getElementById('workBacklogSprints');
     if (!container || !analysisResult) return;
+
+    // Preserva o estado de colapso antes de reconstruir o DOM
+    const openKeys = new Set();
+    let persistedMode = null;
+    let hasRenderedKeys = false;
+    container.querySelectorAll('[data-sprint-key]').forEach(el => {
+        hasRenderedKeys = true;
+        if (!el.classList.contains('collapsed')) openKeys.add(el.dataset.sprintKey);
+        if (!persistedMode) {
+            persistedMode = el.dataset.sprintKey.startsWith('sprint_') ? 'sprint' : 'task';
+        }
+    });
+    // Estado persistido só é válido se já havia elementos renderizados no mesmo modo
+    const hasPersistedState = hasRenderedKeys && persistedMode === backlogGroupMode;
+
     container.innerHTML = '';
 
     // Toggle de agrupamento
@@ -5883,17 +5932,15 @@ function workRenderBacklog() {
         const allSelected = tasks.length > 0 && selectedCount === tasks.length;
         const someSelected = selectedCount > 0 && !allSelected;
 
+        const sprintKey = `kr_${obj.id}_${kr.id}`;
+        const isOpen = hasPersistedState ? openKeys.has(sprintKey) : idx === 0;
         const sprintGroup = document.createElement('div');
-        sprintGroup.className = `work-sprint-group${idx === 0 ? '' : ' collapsed'}${pct === 100 ? ' done' : ''}${selectedCount > 0 ? ' board-active' : ''}`;
+        sprintGroup.dataset.sprintKey = sprintKey;
+        sprintGroup.className = `work-sprint-group${isOpen ? '' : ' collapsed'}${pct === 100 ? ' done' : ''}${selectedCount > 0 ? ' board-active' : ''}`;
 
         const sprintHdr = document.createElement('div');
         sprintHdr.className = 'work-sprint-header';
         sprintHdr.innerHTML = `
-            <button class="work-board-toggle ${allSelected ? 'checked' : ''} ${someSelected ? 'mixed' : ''}"
-                    onclick="workToggleBoardKr(event,'${obj.id}','${kr.id}')"
-                    title="${allSelected ? 'Remover tarefas do board' : 'Adicionar tarefas ao board'}">
-                <i class="fas ${allSelected ? 'fa-check' : someSelected ? 'fa-minus' : 'fa-plus'}"></i>
-            </button>
             <i class="fas fa-chevron-down work-sprint-chevron"></i>
             <span class="backlog-sprint-area-pill work-sprint-area-pill" style="background:${color}18;color:${color};border-color:${color}44" title="${ROLE_LABELS[role]||role}">
                 <span class="backlog-sprint-area-dot" style="background:${color}"></span>
@@ -5901,12 +5948,17 @@ function workRenderBacklog() {
             </span>
             ${extraLabel ? `<span class="work-sprint-num-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${extraLabel}</span>` : ''}
             <span class="work-sprint-name" style="font-weight:500;font-size:.84rem">${kr.title}</span>
+            <button class="work-board-toggle ${allSelected ? 'checked' : ''} ${someSelected ? 'mixed' : ''}"
+                    onclick="workToggleBoardKr(event,'${obj.id}','${kr.id}')"
+                    title="${allSelected ? 'Remover todas do board' : 'Adicionar todas ao board'}">
+                ${allSelected ? '− remover todas' : someSelected ? '+ adicionar resto' : '+ adicionar todas'}
+            </button>
             <span class="sprint-milestone-tag" title="${ms.title}" data-ms-id="${ms.id}"
                   onclick="workSetMilestoneFilter('${ms.id}');event.stopPropagation()">
                 ${typeIcons[ms.type]||'📍'} ${workGetMilestoneTaskLabel(ms)}
             </span>
             <span class="work-sprint-meta">
-                <span class="work-board-selected-count">${selectedCount} no board</span>
+                ${selectedCount > 0 ? `<span class="work-board-selected-count">${selectedCount} no board</span>` : ''}
                 <span class="work-sprint-count">${doneCount}/${tasks.length}</span>
                 ${pct === 100 ? '<span style="color:var(--success-color);font-size:.7rem;font-weight:600">✓</span>' : ''}
             </span>
@@ -5927,9 +5979,10 @@ function workRenderBacklog() {
             const isDoing = ks === 'doing';
             const isSelected = workIsBoardTaskSelected(obj.id, kr.id, t.id);
             const sCls = isDone ? 'work-task-status-done' : isDoing ? 'work-task-status-doing' : 'work-task-status-todo';
+            const prioCls = t.priority ? ` prio-${t.priority}` : '';
             const description = workTaskDescription(t);
             const row = document.createElement('div');
-            row.className = `work-sprint-task-row ${sCls}${isSelected ? ' board-selected' : ''}`;
+            row.className = `work-sprint-task-row ${sCls}${prioCls}${isSelected ? ' board-selected' : ''}`;
             row.dataset.boardTaskKey = taskKey;
             row.dataset.obj = obj.id;
             row.dataset.kr = kr.id;
@@ -5945,8 +5998,6 @@ function workRenderBacklog() {
                     <span class="work-task-title ${isDone?'done-title':''}">${t.title}</span>
                     ${description ? `<span class="work-task-desc">${description}</span>` : ''}
                 </span>
-                <span class="work-task-prio priority-${t.priority}">${t.priority}</span>
-                <span class="work-task-days">⏱${t.estimatedDays||2}d</span>
             `;
             taskList.appendChild(row);
         });
@@ -6026,8 +6077,12 @@ function workRenderBacklog() {
 
         function renderSprintSection(section, groupIdx, completed = false) {
             const { sprintNumber: sn, items, stats } = section;
+            const sprintKey = `sprint_${sn}`;
+            // Sem estado persistido: sprints ativas abertas por padrão (comportamento original)
+            const isOpen = hasPersistedState ? openKeys.has(sprintKey) : !completed;
             const groupEl = document.createElement('div');
-            groupEl.className = `backlog-sprint-section${completed ? ' completed collapsed' : ''}`;
+            groupEl.dataset.sprintKey = sprintKey;
+            groupEl.className = `backlog-sprint-section${completed ? ' completed collapsed' : isOpen ? '' : ' collapsed'}`;
 
             const { totalTasks, totalDone, totalSelected, percentComplete: groupPct } = stats;
             const groupAllSelected = totalTasks > 0 && totalSelected === totalTasks;
@@ -6048,7 +6103,7 @@ function workRenderBacklog() {
                     <button class="work-board-toggle ${groupAllSelected ? 'checked' : ''} ${groupSomeSelected ? 'mixed' : ''}"
                             onclick="workToggleBoardSprint(event)"
                             title="${groupAllSelected ? 'Remover sprint do board' : 'Adicionar sprint ao board'}">
-                        <i class="fas ${groupAllSelected ? 'fa-check' : groupSomeSelected ? 'fa-minus' : 'fa-plus'}"></i>
+                        ${groupAllSelected ? '−todas' : groupSomeSelected ? '+resto' : '+todas'}
                     </button>
                     <i class="fas fa-chevron-down backlog-sprint-chevron"></i>
                     <span class="backlog-sprint-section-title">${sprintLabel}</span>
