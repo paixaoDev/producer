@@ -4573,9 +4573,11 @@ async function aiEnhanceTasks() {
     if (log)   log.innerHTML = '';
     if (actions) actions.style.display = 'none';
 
-    // Coleta todas as tarefas com contexto
+    // Coleta sempre do analysisResult — é a fonte da verdade que é salva.
+    // scheduledResult é um deep clone calculado a partir do analysisResult,
+    // então modificar suas tasks NÃO afetaria o save. Usamos analysisResult diretamente.
     const allTasks = [];
-    const objectives = (scheduledResult || analysisResult)?.objectives || [];
+    const objectives = analysisResult?.objectives || [];
     objectives.forEach(obj => {
         (obj.keyResults || []).forEach(kr => {
             (kr.tasks || []).forEach(task => {
@@ -4686,8 +4688,14 @@ Sem texto extra fora do JSON.`;
     aiEnhanceSetProgress(allTasks.length, allTasks.length, `Concluído! ${doneCount} tarefas melhoradas${errorCount ? `, ${errorCount} erros` : ''}.`);
     aiEnhanceLogAdd(`\n✨ Melhoria concluída! ${doneCount} de ${allTasks.length} tarefas atualizadas.`, 'ok');
 
-    // Salva e re-renderiza
+    // Salva o analysisResult atualizado
     saveCurrentProject({ notify: false });
+
+    // Regenera o scheduledResult a partir do analysisResult atualizado,
+    // para que backlog, board e timeline mostrem os novos títulos/descrições
+    if (scheduledResult) {
+        scheduledResult = scheduleRoadmap(analysisResult.objectives || [], teamConfig);
+    }
     workRefreshCurrentView();
 
     if (actions) actions.style.display = 'flex';
