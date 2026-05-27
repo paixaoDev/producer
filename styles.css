@@ -3405,6 +3405,92 @@ body {
     white-space: nowrap;
 }
 .jira-sprint-open-board:hover { background: var(--primary-color); color: white; }
+
+/* ── Tag de marco inline na sprint ── */
+.sprint-milestone-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    background: rgba(99,102,241,0.08);
+    border: 1px solid rgba(99,102,241,0.18);
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.12s;
+    flex-shrink: 0;
+}
+.sprint-milestone-tag:hover {
+    background: rgba(99,102,241,0.18);
+    border-color: rgba(99,102,241,0.4);
+}
+
+/* ── Separador vertical na roles bar ── */
+.jira-bar-divider {
+    width: 1px;
+    height: 22px;
+    background: var(--gray-200);
+    flex-shrink: 0;
+    margin: 0 0.15rem;
+}
+
+/* ── Container de filtros de marco ── */
+.jira-milestone-filters {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+}
+
+/* ── Chips de filtro de marco estilo Jira ── */
+.jira-ms-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--gray-600);
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: 20px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all 0.12s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.jira-ms-chip:hover {
+    background: var(--gray-200);
+    border-color: var(--gray-300);
+    color: var(--gray-800);
+}
+.jira-ms-chip.active {
+    background: rgba(99,102,241,0.1);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    font-weight: 600;
+}
+.jira-ms-chip.quick {
+    background: #fef3c7;
+    border-color: #fcd34d;
+    color: #92400e;
+}
+.jira-ms-chip.quick:hover { background: #fde68a; }
+.jira-ms-chip.quick.active {
+    background: #f59e0b;
+    border-color: #d97706;
+    color: white;
+}
+.jira-chip-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--gray-200);
+    flex-shrink: 0;
+}
+
 .jira-sprint-body { background: white; }
 
 /* Linha de tarefa no backlog */
