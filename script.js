@@ -4607,6 +4607,9 @@ async function aiEnhanceTasks() {
     for (let i = 0; i < allTasks.length; i += BATCH_SIZE) {
         const batch = allTasks.slice(i, i + BATCH_SIZE);
 
+        // Mapa de IDs válidos do lote atual — só estes podem ser atualizados
+        const validIds = new Set(batch.map(r => r.task.id));
+
         const taskListText = batch.map((ref, idx) => {
             const { obj, kr, task } = ref;
             const currentDesc = workTaskDescription(task);
@@ -4616,11 +4619,20 @@ async function aiEnhanceTasks() {
    Descrição atual: "${currentDesc || '(sem descrição)'}"`;
         }).join('\n\n');
 
+        // IDs válidos explícitos no prompt para evitar alucinações
+        const validIdsList = batch.map(r => r.task.id).join(', ');
+
         const prompt = `Você é um produtor de jogos experiente. O projeto é "${projectTitle}" (${projectGenre}). ${projectDesc ? `Contexto: ${projectDesc}` : ''}
 
 Abaixo estão ${batch.length} tarefas de desenvolvimento. Para cada uma:
-1. Melhore o TÍTULO para ser mais claro, específico e orientado a ação (máx. 80 chars). Mantenha a essência original.
-2. Escreva uma DESCRIÇÃO objetiva (2-3 frases, máx. 200 chars) explicando o que precisa ser feito, critério de aceitação ou resultado esperado. Se já houver uma boa descrição, refine-a.
+1. Melhore o TÍTULO para ser mais claro, específico e orientado a ação (máx. 80 chars). Mantenha a essência original — NÃO invente tarefas novas.
+2. Escreva uma DESCRIÇÃO objetiva (2-3 frases, máx. 200 chars) explicando o que precisa ser feito e o critério de aceitação. Se já houver uma boa descrição, apenas refine-a.
+
+REGRAS OBRIGATÓRIAS:
+- Retorne EXATAMENTE ${batch.length} objetos, um para cada tarefa listada abaixo.
+- O campo "id" deve ser copiado exatamente do [ID:...] de cada tarefa. IDs válidos: ${validIdsList}
+- NÃO crie tarefas novas, NÃO omita tarefas, NÃO altere os IDs.
+- NÃO altere o tipo da tarefa, a área, o milestone ou qualquer outro campo — apenas "title" e "description".
 
 TAREFAS:
 ${taskListText}
@@ -4639,13 +4651,24 @@ Sem texto extra fora do JSON.`;
 
             const results = JSON.parse(jsonMatch[0]);
 
+            // Garante que só tarefas com ID reconhecido do lote atual são modificadas
             results.forEach(result => {
+                if (!result.id || !validIds.has(result.id)) {
+                    // ID desconhecido ou inválido — ignora completamente
+                    if (result.id) aiEnhanceLogAdd(`⚠ ID desconhecido ignorado: "${result.id}"`, 'err');
+                    return;
+                }
                 const ref = batch.find(r => r.task.id === result.id);
                 if (!ref) return;
                 const { task } = ref;
                 const oldTitle = task.title;
-                if (result.title && result.title.trim()) task.title = result.title.trim();
-                if (result.description && result.description.trim()) task.description = result.description.trim();
+                // Só atualiza se o valor novo for uma string não-vazia
+                if (typeof result.title === 'string' && result.title.trim()) {
+                    task.title = result.title.trim();
+                }
+                if (typeof result.description === 'string' && result.description.trim()) {
+                    task.description = result.description.trim();
+                }
                 doneCount++;
                 aiEnhanceLogAdd(`✓ "${oldTitle}" → "${task.title}"`, 'ok');
             });
