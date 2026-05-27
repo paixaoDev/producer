@@ -616,7 +616,7 @@ body.results-workspace-mode {
 body.results-workspace-mode .container {
     width: 100%;
     max-width: none;
-    min-height: 100vh;
+    height: 100vh;
     padding: 0;
 }
 
@@ -626,7 +626,7 @@ body.results-workspace-mode .footer {
 }
 
 body.results-workspace-mode .results-section {
-    min-height: 100vh;
+    height: 100vh;
     margin: 0;
 }
 
@@ -698,7 +698,7 @@ body.results-workspace-mode .results-section {
 }
 
 body.results-workspace-mode .product-workspace {
-    min-height: 100vh;
+    height: 100vh;
     border: 0;
     border-radius: 0;
 }
@@ -823,12 +823,31 @@ body.results-workspace-mode .workspace-brand {
 }
 
 body.results-workspace-mode .workspace-body {
-    min-height: calc(100vh - 65px);
+    height: calc(100vh - 65px);
+    min-height: 0;
 }
 
 .workspace-main {
     min-width: 0;
+    min-height: 0;
     padding: 1rem;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--gray-300) transparent;
+}
+
+.workspace-main::-webkit-scrollbar {
+    width: 7px;
+}
+
+.workspace-main::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.workspace-main::-webkit-scrollbar-thumb {
+    background: var(--gray-300);
+    border-radius: 99px;
 }
 
 .workspace-tabs {
@@ -4421,6 +4440,9 @@ body.results-workspace-mode .workspace-body {
     .workspace-topbar {
         grid-template-columns: 1fr;
         align-items: flex-start;
+    }
+    body.results-workspace-mode .workspace-body {
+        height: calc(100vh - 96px);
     }
     .workspace-actions {
         justify-content: flex-start;
