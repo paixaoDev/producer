@@ -3171,7 +3171,12 @@ function handleTeamSlider(area, rawValue) {
 function populateOverview() {
     const overviewContent = document.getElementById('overviewContent');
     const overview = analysisResult.overview;
-    if (!overview) { overviewContent.innerHTML = ''; return; }
+    if (!overview) {
+        overviewContent.innerHTML = '';
+        const sizeEl = document.getElementById('resultsProjectSize');
+        if (sizeEl) sizeEl.textContent = '';
+        return;
+    }
 
     const totalTasks = countTotalTasks();
 
@@ -3182,6 +3187,13 @@ function populateOverview() {
     const genre   = overview.genre ? `${overview.genre} <span class="genre-badge">${analysisResult.genreLabel}</span>` : '—';
     const platform = overview.platform || '—';
     const totalObjs = analysisResult.objectives ? analysisResult.objectives.length : 0;
+    const durationMonths = analysisResult.totalDurationMonths || overview.totalDurationMonths;
+    const durationNumber = Number(durationMonths);
+    const durationLabel = Number.isFinite(durationNumber) ? durationNumber : '?';
+    const sizeEl = document.getElementById('resultsProjectSize');
+    if (sizeEl) {
+        sizeEl.textContent = `Tarefas: ${totalTasks} ${totalTasks === 1 ? 'tarefa' : 'tarefas'} · ${totalObjs} ${totalObjs === 1 ? 'objetivo' : 'objetivos'} · Duração ${durationLabel} ${durationNumber === 1 ? 'mês' : 'meses'}`;
+    }
 
     overviewContent.innerHTML = `
         <div class="overview-row">

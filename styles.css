@@ -706,7 +706,7 @@ body.results-workspace-mode .product-workspace {
 .workspace-topbar {
     min-height: 64px;
     display: grid;
-    grid-template-columns: auto minmax(180px, 1fr) auto;
+    grid-template-columns: minmax(180px, 1fr) auto;
     align-items: center;
     gap: 1rem;
     padding: 0.75rem 1rem;
@@ -716,26 +716,6 @@ body.results-workspace-mode .product-workspace {
 
 body.results-workspace-mode .workspace-topbar {
     grid-template-columns: minmax(180px, 1fr) auto;
-}
-
-body.results-workspace-mode .workspace-brand {
-    display: none;
-}
-
-.workspace-brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    color: #172b4d;
-    font-size: 0.86rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    white-space: nowrap;
-}
-
-.workspace-brand i {
-    color: var(--primary-color);
-    font-size: 0.95rem;
 }
 
 .workspace-title-block {
@@ -752,11 +732,34 @@ body.results-workspace-mode .workspace-brand {
     text-transform: uppercase;
 }
 
+.workspace-product-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.workspace-product-label i {
+    color: var(--primary-color);
+    font-size: 0.75rem;
+}
+
 .workspace-title-block h2 {
     margin: 0;
     color: #172b4d;
     font-size: 1rem;
     font-weight: 700;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-project-size {
+    display: block;
+    margin-top: 2px;
+    color: var(--gray-500);
+    font-size: 0.68rem;
+    font-weight: 600;
     line-height: 1.25;
     overflow: hidden;
     text-overflow: ellipsis;
