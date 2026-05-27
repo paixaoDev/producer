@@ -457,6 +457,10 @@
                                     <i class="fas fa-download"></i>
                                     <span>Exportar roadmap</span>
                                 </button>
+                                <button class="workspace-action-btn ai-enhance-btn" id="aiEnhanceTasksBtn" onclick="aiEnhanceTasks()" type="button">
+                                    <i class="fas fa-magic"></i>
+                                    <span>Melhorar tarefas com IA</span>
+                                </button>
                                 <button class="workspace-action-btn danger" id="newAnalysisBtn" type="button">
                                     <i class="fas fa-plus"></i>
                                     <span>Nova análise</span>
@@ -479,6 +483,29 @@
     </div>
 
     </div><!-- /appMain -->
+
+    <!-- Modal de Melhoria de Tarefas com IA -->
+    <div id="aiEnhanceModal" class="ai-enhance-modal-overlay" style="display:none">
+        <div class="ai-enhance-modal">
+            <div class="ai-enhance-modal-header">
+                <div class="ai-enhance-icon"><i class="fas fa-magic"></i></div>
+                <h3>Melhorando tarefas com IA</h3>
+                <p class="ai-enhance-subtitle">A IA está revisando os títulos e descrições de cada tarefa do projeto</p>
+            </div>
+            <div class="ai-enhance-progress-wrap">
+                <div class="ai-enhance-progress-bar-bg">
+                    <div class="ai-enhance-progress-bar" id="aiEnhanceProgressBar" style="width:0%"></div>
+                </div>
+                <div class="ai-enhance-progress-label" id="aiEnhanceProgressLabel">Iniciando...</div>
+            </div>
+            <div class="ai-enhance-log" id="aiEnhanceLog"></div>
+            <div class="ai-enhance-actions" id="aiEnhanceActions" style="display:none">
+                <button class="btn-primary" onclick="closeAiEnhanceModal()">
+                    <i class="fas fa-check"></i> Fechar
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Modal de confirmação de importação de JSON -->
     <div id="importModalOverlay" class="import-modal-overlay">

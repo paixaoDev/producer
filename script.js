@@ -2228,15 +2228,19 @@ ${krsMd}
 
 Para CADA KR, crie as tarefas que compõem esse KR. OBRIGATÓRIO: mencione elementos reais do GDD (nomes de personagens, mecânicas específicas, ambientes). Nunca escreva "personagem principal" se o GDD diz o nome dele.
 
-Conceito de sprint: cada sprint dura 2 semanas (10 dias úteis). Cada tarefa deve ter estimativa de 1, 2 ou 3 dias de trabalho, que representa o esforço real daquela entrega específica dentro de uma sprint. Um KR pode ter múltiplas sprints.
+Conceito de sprint: cada sprint dura 2 semanas (10 dias úteis). Cada tarefa deve ter estimativa de 1, 2 ou 3 dias de trabalho. Um KR pode ter múltiplas sprints.
+
+FORMATO DE CADA TAREFA — dois campos separados por " >> ":
+1. TÍTULO: curto e direto (máx. 5 palavras), verbo no infinitivo + objeto principal. Ex: "Modelar personagem Kael", "Implementar sistema de dash"
+2. DESCRIÇÃO: frase técnica explicando O QUE fazer, COMO fazer e resultado esperado (1-2 linhas). Ex: "Criar high poly no ZBrush com tronco, membros e cabeça separados; bake de normal map para LOD."
 
 Regras:
-- Verbos precisos: Implementar, Modelar, Texturizar, Riger, Animar, Testar, Compor, Escrever, Projetar, Revisar
-- ULTRA-ESPECÍFICO: "Modelar high poly do personagem no ZBrush (tronco, membros, cabeça)" NÃO "Modelar personagem"
+- Verbos no título: Implementar, Modelar, Texturizar, Riger, Animar, Testar, Compor, Escrever, Projetar, Revisar
+- Descrição ULTRA-ESPECÍFICA: mencione ferramentas, parâmetros, entregável concreto
 - Arte: modelagem/UV/textura/rig/anims em tarefas separadas
 - Programação: lógica core / testes / integração / feedback visual separados
 - Design: rascunho / revisão / aprovação / iteração separados
-- 3-10 tarefas por KR | 1, 2 ou 3 dias por tarefa (esforço individual, não duração total)
+- 3-10 tarefas por KR | 1, 2 ou 3 dias por tarefa
 - Prioridade: critical (blocker), high (core), medium (conteúdo), low (polish)
 - Tipo: feature, art, design, audio, test, fix, config, doc
 
@@ -2244,19 +2248,19 @@ Retorne APENAS o Markdown abaixo:
 
 ## ${sa.title}
 ### KR 1: [nome do KR]
-- [ ] Tarefa específica | 2d | high | feature
-- [ ] Outra tarefa | 3d | high | art
-- [ ] Tarefa de revisão | 1d | medium | doc
+- [ ] Título curto >> Descrição técnica detalhada do que fazer e como | 2d | high | feature
+- [ ] Outra tarefa >> Descrição com ferramenta e entregável esperado | 3d | high | art
+- [ ] Revisar e aprovar >> Checar critérios de aceitação com o time e registrar feedback | 1d | medium | doc
 
 ### KR 2: [nome do KR]
-- [ ] Tarefa específica | 2d | critical | feature`;
+- [ ] Título curto >> Descrição técnica detalhada | 2d | critical | feature`;
 
         try {
             const md = await callAIAPI(prompt, apiKey);
             results[sa.id] = md;
         } catch (e) {
             console.warn(`Erro sprints MD ${sa.title}:`, e);
-            results[sa.id] = `## ${sa.title}\n### KR 1: [erro]\n- [ ] Tarefa não gerada | 2d | medium | feature`;
+            results[sa.id] = `## ${sa.title}\n### KR 1: [erro]\n- [ ] Tarefa não gerada >> Erro ao gerar tarefas para esta sub-área. Tente novamente. | 2d | medium | feature`;
         }
 
         if (onProgress) onProgress(i + 1, subareaList.length);
@@ -2682,12 +2686,17 @@ function parseMDSprints(md, subareaList) {
 
             let taskIdx = 0;
             for (const line of krLines.slice(1)) {
-                // Tarefas: "- [ ] Título | 2d | high | feature"
+                // Tarefas: "- [ ] Título >> Descrição | 2d | high | feature"  (ou sem descrição)
                 const taskMatch = line.match(/^-\s+\[[ x]\]\s+(.+?)\s*\|\s*(\d+)d\s*\|\s*(\w+)\s*\|\s*(\w+)/);
                 if (taskMatch) {
+                    const rawTitle = taskMatch[1].trim();
+                    const sepIdx   = rawTitle.indexOf('>>');
+                    const title       = sepIdx >= 0 ? rawTitle.slice(0, sepIdx).trim() : rawTitle;
+                    const description = sepIdx >= 0 ? rawTitle.slice(sepIdx + 2).trim() : '';
                     kr.tasks.push({
                         id: `${kr.id}_t${taskIdx + 1}`,
-                        title: taskMatch[1].trim(),
+                        title,
+                        description,
                         estimatedDays: Math.min(3, Math.max(1, parseInt(taskMatch[2]))),
                         priority: taskMatch[3].trim(),
                         type: taskMatch[4].trim()
@@ -2704,9 +2713,14 @@ function parseMDSprints(md, subareaList) {
                 for (const line of krLines.slice(1)) {
                     const altTask = line.match(/^[-*]\s+(.{10,})/);
                     if (altTask && !altTask[1].startsWith('Estimativa') && !altTask[1].startsWith('Descrição')) {
+                        const rawAlt      = altTask[1].trim().replace(/\s*\|\s*\d+d.*$/, '');
+                        const sepIdx      = rawAlt.indexOf('>>');
+                        const altTitle    = sepIdx >= 0 ? rawAlt.slice(0, sepIdx).trim() : rawAlt;
+                        const altDesc     = sepIdx >= 0 ? rawAlt.slice(sepIdx + 2).trim() : '';
                         kr.tasks.push({
                             id: `${kr.id}_t${kr.tasks.length + 1}`,
-                            title: altTask[1].trim().replace(/\s*\|\s*\d+d.*$/, ''),
+                            title: altTitle,
+                            description: altDesc,
                             estimatedDays: 2,
                             priority: 'medium',
                             type: 'feature'
@@ -4445,6 +4459,218 @@ notifStyle.textContent = `
     }
 `;
 document.head.appendChild(notifStyle);
+
+// ============================================================
+// MELHORIA DE TAREFAS COM IA
+// ============================================================
+
+// Estilos do modal de melhoria
+const aiEnhanceStyle = document.createElement('style');
+aiEnhanceStyle.textContent = `
+    .ai-enhance-modal-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,.6);
+        z-index: 9000; display: flex; align-items: center; justify-content: center;
+        backdrop-filter: blur(4px);
+    }
+    .ai-enhance-modal {
+        background: var(--surface-color, #fff);
+        border-radius: 16px; padding: 2rem;
+        max-width: 520px; width: 92%;
+        box-shadow: 0 24px 64px rgba(0,0,0,.25);
+        display: flex; flex-direction: column; gap: 1.2rem;
+    }
+    .ai-enhance-modal-header { text-align: center; }
+    .ai-enhance-icon {
+        width: 56px; height: 56px; border-radius: 50%;
+        background: linear-gradient(135deg,#6366f1,#8b5cf6);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto .8rem; font-size: 1.4rem; color: #fff;
+    }
+    .ai-enhance-modal h3 { margin: 0 0 .3rem; font-size: 1.15rem; font-weight: 700; }
+    .ai-enhance-subtitle { margin: 0; font-size: .82rem; color: var(--gray-500, #888); }
+    .ai-enhance-progress-wrap { display: flex; flex-direction: column; gap: .4rem; }
+    .ai-enhance-progress-bar-bg {
+        height: 8px; border-radius: 99px;
+        background: var(--gray-100, #f1f1f1); overflow: hidden;
+    }
+    .ai-enhance-progress-bar {
+        height: 100%; border-radius: 99px;
+        background: linear-gradient(90deg,#6366f1,#8b5cf6);
+        transition: width .4s ease;
+    }
+    .ai-enhance-progress-label { font-size: .78rem; color: var(--gray-500, #888); text-align: right; }
+    .ai-enhance-log {
+        max-height: 240px; overflow-y: auto;
+        background: var(--gray-50, #f9f9f9);
+        border: 1px solid var(--border-color, #e5e5e5);
+        border-radius: 8px; padding: .75rem;
+        font-size: .76rem; display: flex; flex-direction: column; gap: .3rem;
+    }
+    .ai-enhance-log-item { padding: .25rem 0; border-bottom: 1px solid var(--border-color, #e5e5e5); line-height: 1.4; }
+    .ai-enhance-log-item:last-child { border-bottom: none; }
+    .ai-enhance-log-item.ok { color: var(--success-color, #22c55e); }
+    .ai-enhance-log-item.err { color: var(--danger-color, #ef4444); }
+    .ai-enhance-log-item.info { color: var(--gray-500, #888); font-style: italic; }
+    .ai-enhance-actions { display: flex; justify-content: flex-end; }
+    .workspace-action-btn.ai-enhance-btn {
+        background: linear-gradient(135deg,#6366f118,#8b5cf618);
+        border-color: #8b5cf644; color: #6366f1;
+    }
+    .workspace-action-btn.ai-enhance-btn:hover {
+        background: linear-gradient(135deg,#6366f130,#8b5cf630);
+    }
+    .workspace-action-btn.ai-enhance-btn.running {
+        opacity: .7; cursor: not-allowed;
+    }
+`;
+document.head.appendChild(aiEnhanceStyle);
+
+function aiEnhanceLogAdd(text, cls = '') {
+    const log = document.getElementById('aiEnhanceLog');
+    if (!log) return;
+    const item = document.createElement('div');
+    item.className = `ai-enhance-log-item ${cls}`;
+    item.textContent = text;
+    log.appendChild(item);
+    log.scrollTop = log.scrollHeight;
+}
+
+function aiEnhanceSetProgress(done, total, label) {
+    const bar = document.getElementById('aiEnhanceProgressBar');
+    const lbl = document.getElementById('aiEnhanceProgressLabel');
+    const pct = total > 0 ? Math.round(done / total * 100) : 0;
+    if (bar) bar.style.width = pct + '%';
+    if (lbl) lbl.textContent = label || `${done} / ${total} tarefas (${pct}%)`;
+}
+
+function closeAiEnhanceModal() {
+    const modal = document.getElementById('aiEnhanceModal');
+    if (modal) modal.style.display = 'none';
+    const btn = document.getElementById('aiEnhanceTasksBtn');
+    if (btn) btn.classList.remove('running');
+}
+
+async function aiEnhanceTasks() {
+    if (!analysisResult) {
+        showNotification('Nenhum projeto aberto. Gere ou carregue um roadmap primeiro.', 'error');
+        return;
+    }
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        showNotification('Configure sua chave de API primeiro.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('aiEnhanceTasksBtn');
+    if (btn?.classList.contains('running')) return;
+    if (btn) btn.classList.add('running');
+
+    // Abre o modal
+    const modal = document.getElementById('aiEnhanceModal');
+    const log   = document.getElementById('aiEnhanceLog');
+    const actions = document.getElementById('aiEnhanceActions');
+    if (modal) modal.style.display = 'flex';
+    if (log)   log.innerHTML = '';
+    if (actions) actions.style.display = 'none';
+
+    // Coleta todas as tarefas com contexto
+    const allTasks = [];
+    const objectives = (scheduledResult || analysisResult)?.objectives || [];
+    objectives.forEach(obj => {
+        (obj.keyResults || []).forEach(kr => {
+            (kr.tasks || []).forEach(task => {
+                allTasks.push({ obj, kr, task });
+            });
+        });
+    });
+
+    if (allTasks.length === 0) {
+        aiEnhanceLogAdd('Nenhuma tarefa encontrada no projeto.', 'err');
+        if (actions) actions.style.display = 'flex';
+        if (btn) btn.classList.remove('running');
+        return;
+    }
+
+    aiEnhanceLogAdd(`${allTasks.length} tarefas encontradas. Iniciando melhoria...`, 'info');
+    aiEnhanceSetProgress(0, allTasks.length, `0 / ${allTasks.length} tarefas (0%)`);
+
+    // Contexto do projeto
+    const projectTitle = analysisResult.overview?.title || 'Projeto';
+    const projectGenre = analysisResult.overview?.genre || '';
+    const projectDesc  = analysisResult.overview?.description || '';
+
+    // Processa em lotes de 10 tarefas para economizar tokens
+    const BATCH_SIZE = 10;
+    let doneCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < allTasks.length; i += BATCH_SIZE) {
+        const batch = allTasks.slice(i, i + BATCH_SIZE);
+
+        const taskListText = batch.map((ref, idx) => {
+            const { obj, kr, task } = ref;
+            const currentDesc = workTaskDescription(task);
+            return `${idx + 1}. [ID:${task.id}]
+   Área: ${obj.area} | Objetivo: "${obj.title}" | KR: "${kr.title}"
+   Título atual: "${task.title}"
+   Descrição atual: "${currentDesc || '(sem descrição)'}"`;
+        }).join('\n\n');
+
+        const prompt = `Você é um produtor de jogos experiente. O projeto é "${projectTitle}" (${projectGenre}). ${projectDesc ? `Contexto: ${projectDesc}` : ''}
+
+Abaixo estão ${batch.length} tarefas de desenvolvimento. Para cada uma:
+1. Melhore o TÍTULO para ser mais claro, específico e orientado a ação (máx. 80 chars). Mantenha a essência original.
+2. Escreva uma DESCRIÇÃO objetiva (2-3 frases, máx. 200 chars) explicando o que precisa ser feito, critério de aceitação ou resultado esperado. Se já houver uma boa descrição, refine-a.
+
+TAREFAS:
+${taskListText}
+
+Responda APENAS com um JSON array com exatamente ${batch.length} objetos, na mesma ordem:
+[
+  { "id": "ID_DA_TAREFA", "title": "Novo título", "description": "Nova descrição" },
+  ...
+]
+Sem texto extra fora do JSON.`;
+
+        try {
+            const raw = await callAIAPI(prompt, apiKey);
+            const jsonMatch = raw.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) throw new Error('Resposta não contém JSON array válido');
+
+            const results = JSON.parse(jsonMatch[0]);
+
+            results.forEach(result => {
+                const ref = batch.find(r => r.task.id === result.id);
+                if (!ref) return;
+                const { task } = ref;
+                const oldTitle = task.title;
+                if (result.title && result.title.trim()) task.title = result.title.trim();
+                if (result.description && result.description.trim()) task.description = result.description.trim();
+                doneCount++;
+                aiEnhanceLogAdd(`✓ "${oldTitle}" → "${task.title}"`, 'ok');
+            });
+
+        } catch (err) {
+            errorCount++;
+            aiEnhanceLogAdd(`⚠ Erro no lote ${Math.floor(i/BATCH_SIZE)+1}: ${err.message}`, 'err');
+        }
+
+        aiEnhanceSetProgress(Math.min(i + BATCH_SIZE, allTasks.length), allTasks.length);
+        // Pequena pausa entre lotes para não sobrecarregar a API
+        if (i + BATCH_SIZE < allTasks.length) await sleep(800);
+    }
+
+    aiEnhanceSetProgress(allTasks.length, allTasks.length, `Concluído! ${doneCount} tarefas melhoradas${errorCount ? `, ${errorCount} erros` : ''}.`);
+    aiEnhanceLogAdd(`\n✨ Melhoria concluída! ${doneCount} de ${allTasks.length} tarefas atualizadas.`, 'ok');
+
+    // Salva e re-renderiza
+    saveCurrentProject({ notify: false });
+    workRefreshCurrentView();
+
+    if (actions) actions.style.display = 'flex';
+    if (btn) btn.classList.remove('running');
+    showNotification(`✨ ${doneCount} tarefas melhoradas com sucesso!`, 'success');
+}
 
 // ============================================================
 // SISTEMA DE MÚLTIPLOS PROJETOS

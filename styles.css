@@ -4158,11 +4158,13 @@ body.results-workspace-mode .workspace-body {
 .work-task-desc {
     display: -webkit-box;
     overflow: hidden;
-    color: var(--gray-500);
-    font-size: 0.73rem;
-    line-height: 1.35;
+    color: var(--gray-400);
+    font-size: 0.71rem;
+    line-height: 1.4;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+    font-style: italic;
+    margin-top: 0.05rem;
 }
 .work-task-days { font-size: 0.69rem; color: var(--gray-400); white-space: nowrap; padding-top: 1px; }
 .work-task-prio {
@@ -4250,16 +4252,19 @@ body.results-workspace-mode .workspace-body {
 }
 .kcard:hover { box-shadow: var(--shadow); transform: translateY(-1px); border-color: #b3d4ff; }
 .kcard.dragging { opacity: 0.45; cursor: grabbing; }
-.kcard-title { font-size: 0.82rem; font-weight: 650; color: #172b4d; line-height: 1.4; margin-bottom: 0.35rem; }
+.kcard-title { font-size: 0.82rem; font-weight: 650; color: #172b4d; line-height: 1.4; margin-bottom: 0.25rem; }
 .kcard-desc {
     display: -webkit-box;
     overflow: hidden;
     margin-bottom: 0.5rem;
-    color: var(--gray-500);
-    font-size: 0.74rem;
-    line-height: 1.4;
+    color: var(--gray-400);
+    font-size: 0.73rem;
+    line-height: 1.45;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
+    font-style: italic;
+    border-left: 2px solid var(--gray-200);
+    padding-left: 0.45rem;
 }
 .kcard-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; }
 .kcard-days { margin-left: auto; font-size: 0.68rem; color: var(--gray-400); }
