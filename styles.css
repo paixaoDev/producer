@@ -3273,76 +3273,69 @@ body {
 .jira-roles-bar {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.6rem 1rem;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
     border-bottom: 1px solid var(--gray-100);
     background: white;
     flex-wrap: wrap;
 }
-.jira-filter-label {
-    font-size: 0.73rem;
-    font-weight: 600;
-    color: var(--gray-400);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-}
 .jira-role-avatars {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
     flex-wrap: wrap;
 }
+
+/* Botão wrapper — sem borda, sem fundo */
 .jira-avatar {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 2px;
-    padding: 4px 8px;
-    border-radius: 8px;
-    border: 2px solid var(--gray-200);
-    background: var(--gray-50);
-    cursor: pointer;
-    transition: all 0.15s;
-    font-family: inherit;
-    min-width: 52px;
-}
-.jira-avatar:hover {
-    border-color: var(--primary-color);
-    background: rgba(99,102,241,0.05);
-}
-.jira-avatar.active {
-    border-color: var(--primary-color);
-    background: rgba(99,102,241,0.1);
-    box-shadow: 0 0 0 2px rgba(99,102,241,0.15);
-}
-.avatar-emoji {
-    font-size: 1.25rem;
-    line-height: 1;
-    display: block;
-}
-.avatar-label {
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: var(--gray-500);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    line-height: 1;
-}
-.jira-avatar.active .avatar-label { color: var(--primary-color); }
-.jira-roles-all-btn {
-    font-size: 0.73rem;
-    font-weight: 600;
-    color: var(--primary-color);
+    justify-content: center;
+    padding: 0;
+    border: none;
     background: none;
-    border: 1px solid var(--primary-color);
-    border-radius: 6px;
-    padding: 3px 10px;
     cursor: pointer;
-    transition: all 0.12s;
     font-family: inherit;
+    border-radius: 50%;
+    outline: none;
+    transition: transform 0.15s;
 }
-.jira-roles-all-btn:hover { background: var(--primary-color); color: white; }
+.jira-avatar:focus { outline: none; }
+
+/* Círculo colorido estilo Jira */
+.avatar-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    line-height: 1;
+    transition: opacity 0.15s, box-shadow 0.15s, transform 0.15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    opacity: 0.38;
+    filter: grayscale(50%);
+}
+
+/* Cor de fundo por cargo */
+.avatar-prog   { background: #dbeafe; } /* azul — Programador */
+.avatar-art    { background: #fce7f3; } /* rosa — Artista     */
+.avatar-design { background: #ede9fe; } /* roxo — Designer    */
+.avatar-audio  { background: #d1fae5; } /* verde — Áudio      */
+.avatar-qa     { background: #fef3c7; } /* amarelo — QA       */
+
+.jira-avatar:hover .avatar-circle {
+    opacity: 0.72;
+    filter: grayscale(0%);
+    transform: scale(1.12);
+}
+.jira-avatar.active .avatar-circle {
+    opacity: 1;
+    filter: grayscale(0%);
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--primary-color);
+    transform: scale(1.05);
+}
 
 /* Conteúdo principal */
 .jira-main {
@@ -3560,5 +3553,5 @@ body {
     .jira-tabs-bar { padding: 0 0.5rem; }
     .kanban-cols { grid-template-columns: 1fr; }
     .kanban-select { min-width: 160px; }
-    .jira-avatar { min-width: 44px; padding: 3px 5px; }
+    .avatar-circle { width: 28px; height: 28px; font-size: 0.88rem; }
 }
