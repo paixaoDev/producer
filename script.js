@@ -2957,6 +2957,7 @@ function fixTruncatedJSON(str) {
 // UI DE LOADING COM PROGRESSO DAS FASES
 // ============================================================
 function showLoadingScreen() {
+    document.body.classList.remove('results-workspace-mode');
     uploadSection.style.display = 'none';
     loadingSection.style.display = 'block';
     resultsSection.style.display = 'none';
@@ -2988,6 +2989,7 @@ function setLoadingPhase(phase, message) {
 // EXIBIÇÃO DE RESULTADOS — HIERARQUIA Objetivo > OKR > Sprint
 // ============================================================
 function showResults() {
+    document.body.classList.add('results-workspace-mode');
     uploadSection.style.display = 'none';
     loadingSection.style.display = 'none';
     resultsSection.style.display = 'block';
@@ -4080,6 +4082,7 @@ function exportResults() {
 // RESET E NAVEGAÇÃO
 // ============================================================
 function resetToUpload() {
+    document.body.classList.remove('results-workspace-mode');
     currentFile = null;
     analysisResult = null;
     clearFile();
