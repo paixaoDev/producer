@@ -1,8 +1,8 @@
-# Filtro de Marcos Jira-Style
+# Filtro de Marcos estilo produto
 
 ## Objetivo
 
-Transformar o filtro de marcos do backlog em um campo de busca com sugestoes, parecido com o Jira, mantendo um atalho rapido para o primeiro marco do projeto.
+Transformar o filtro de marcos do backlog em um campo de busca com sugestoes, parecido com o Produto, mantendo um atalho rapido para o primeiro marco do projeto.
 
 ## Comportamento
 
@@ -20,7 +20,7 @@ Os marcos devem priorizar nomes de producao legiveis, como `Prototipo Jogavel`, 
 
 ## Arquitetura
 
-A mudanca fica concentrada em `script.js` e `styles.css`. Funcoes puras pequenas cuidam de ordenar, rotular e filtrar sugestoes de marcos; a UI usa essas funcoes para renderizar o campo e atualizar `jiraSelectedMilestone`.
+A mudanca fica concentrada em `script.js` e `styles.css`. Funcoes puras pequenas cuidam de ordenar, rotular e filtrar sugestoes de marcos; a UI usa essas funcoes para renderizar o campo e atualizar `workSelectedMilestone`.
 
 ## Testes
 

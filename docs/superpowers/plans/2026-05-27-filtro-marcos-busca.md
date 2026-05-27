@@ -1,10 +1,10 @@
-# Filtro de Marcos Jira-Style Implementation Plan
+# Filtro de Marcos estilo produto Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a Jira-style searchable milestone filter for the backlog.
+**Goal:** Build a estilo produto searchable milestone filter for the backlog.
 
-**Architecture:** Keep the existing static app structure. Add pure milestone filter helpers to `script.js`, test those helpers with Node, and use them from the existing `jiraRenderMilestoneFilters()` flow.
+**Architecture:** Keep the existing static app structure. Add pure milestone filter helpers to `script.js`, test those helpers with Node, and use them from the existing `workRenderMilestoneFilters()` flow.
 
 **Tech Stack:** Plain HTML, CSS, browser JavaScript, Node built-in `assert` for tests.
 
@@ -24,11 +24,11 @@ Create `tests/milestone-filter.test.js` with sample milestones and assertions fo
 
 Run: `node tests/milestone-filter.test.js`
 
-Expected: FAIL because `jiraSortMilestonesForFilter` is not defined in the extracted helper scope.
+Expected: FAIL because `workSortMilestonesForFilter` is not defined in the extracted helper scope.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Add `jiraSortMilestonesForFilter`, `jiraNormalizeMilestoneText`, `jiraFilterMilestoneOptions`, `jiraGetMilestoneQuickLabel`, and `jiraGetMilestoneSelectedLabel` to `script.js`.
+Add `workSortMilestonesForFilter`, `workNormalizeMilestoneText`, `workFilterMilestoneOptions`, `workGetMilestoneQuickLabel`, and `workGetMilestoneSelectedLabel` to `script.js`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -44,15 +44,15 @@ Expected: PASS.
 
 - [ ] **Step 1: Replace milestone chips**
 
-Update `jiraRenderMilestoneFilters()` so it renders the first-milestone quick button, a search input, a suggestions popover, and a selected milestone pill instead of all milestone chips.
+Update `workRenderMilestoneFilters()` so it renders the first-milestone quick button, a search input, a suggestions popover, and a selected milestone pill instead of all milestone chips.
 
 - [ ] **Step 2: Wire interactions**
 
-Use existing `jiraSetMilestoneFilter()` for selecting and clearing. Add input, focus, keyboard escape, and outside-click handling.
+Use existing `workSetMilestoneFilter()` for selecting and clearing. Add input, focus, keyboard escape, and outside-click handling.
 
 - [ ] **Step 3: Style the field**
 
-Add compact Jira-like styles for the search field, popover, suggestion rows, and selected pill.
+Add compact Produto-like styles for the search field, popover, suggestion rows, and selected pill.
 
 - [ ] **Step 4: Verify manually**
 

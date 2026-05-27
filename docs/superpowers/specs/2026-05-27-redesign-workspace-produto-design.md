@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Retrabalhar a tela de resultados do Producer para parecer uma ferramenta de producao profissional, na linha de Jira ou ClickUp, com foco principal em Cronograma, Backlog e Board.
+Retrabalhar a tela de resultados do Producer para parecer uma ferramenta de producao profissional, na linha de Produto ou ferramentas de produto, com foco principal em Cronograma, Backlog e Board.
 
 ## Escopo
 

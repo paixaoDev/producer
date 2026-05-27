@@ -271,63 +271,63 @@
                         </section>
 
                         <section class="workspace-panel" id="workspaceWorkPanel" data-workspace-panel="work">
-                            <div class="jira-shell workspace-driven" id="jiraShell">
+                            <div class="work-shell workspace-driven" id="workShell">
 
                 <!-- Linha 1: abas Backlog / Board -->
-                <div class="jira-tabs-bar">
-                    <button class="jira-tab active" id="jiraNavBacklog" onclick="jiraSetView('backlog')">
+                <div class="work-tabs-bar">
+                    <button class="work-tab active" id="workNavBacklog" onclick="workSetView('backlog')">
                         <i class="fas fa-list"></i> Backlog
                     </button>
-                    <button class="jira-tab" id="jiraNavBoard" onclick="jiraSetView('board')">
+                    <button class="work-tab" id="workNavBoard" onclick="workSetView('board')">
                         <i class="fas fa-columns"></i> Board
                     </button>
-                    <div class="jira-tabs-sep"></div>
+                    <div class="work-tabs-sep"></div>
                     <!-- Breadcrumb da sprint ativa no board (só visível na aba Board) -->
-                    <div class="jira-board-sprint-selector" id="jiraBoardSprintBar" style="display:none">
-                        <span class="jira-filter-label"><i class="fas fa-columns"></i></span>
-                        <span id="jiraBoardActiveSprintLabel" style="font-size:.8rem;color:var(--gray-600)">—</span>
-                        <button class="btn-xs btn-ghost" onclick="jiraSetView('backlog')" title="Voltar ao backlog">
+                    <div class="work-board-sprint-selector" id="workBoardSprintBar" style="display:none">
+                        <span class="work-filter-label"><i class="fas fa-columns"></i></span>
+                        <span id="workBoardActiveSprintLabel" style="font-size:.8rem;color:var(--gray-600)">—</span>
+                        <button class="btn-xs btn-ghost" onclick="workSetView('backlog')" title="Voltar ao backlog">
                             <i class="fas fa-arrow-left"></i> Backlog
                         </button>
                     </div>
                 </div>
 
                 <!-- Linha 2: avatares de cargo + filtros de marco -->
-                <div class="jira-roles-bar">
-                    <div class="jira-role-avatars" id="jiraRoleAvatars">
-                        <button class="jira-avatar active" data-role="programming" title="Programador" onclick="jiraToggleRole('programming')">
+                <div class="work-roles-bar">
+                    <div class="work-role-avatars" id="workRoleAvatars">
+                        <button class="work-avatar active" data-role="programming" title="Programador" onclick="workToggleRole('programming')">
                             <span class="avatar-circle avatar-prog">💻</span>
                         </button>
-                        <button class="jira-avatar active" data-role="art" title="Artista" onclick="jiraToggleRole('art')">
+                        <button class="work-avatar active" data-role="art" title="Artista" onclick="workToggleRole('art')">
                             <span class="avatar-circle avatar-art">🎨</span>
                         </button>
-                        <button class="jira-avatar active" data-role="design" title="Designer" onclick="jiraToggleRole('design')">
+                        <button class="work-avatar active" data-role="design" title="Designer" onclick="workToggleRole('design')">
                             <span class="avatar-circle avatar-design">📋</span>
                         </button>
-                        <button class="jira-avatar active" data-role="audio" title="Áudio" onclick="jiraToggleRole('audio')">
+                        <button class="work-avatar active" data-role="audio" title="Áudio" onclick="workToggleRole('audio')">
                             <span class="avatar-circle avatar-audio">🎵</span>
                         </button>
-                        <button class="jira-avatar active" data-role="qa" title="QA" onclick="jiraToggleRole('qa')">
+                        <button class="work-avatar active" data-role="qa" title="QA" onclick="workToggleRole('qa')">
                             <span class="avatar-circle avatar-qa">🧪</span>
                         </button>
                     </div>
                     <!-- Separador vertical -->
-                    <span class="jira-bar-divider"></span>
+                    <span class="work-bar-divider"></span>
                     <!-- Filtros de marco — populados por JS -->
-                    <div class="jira-milestone-filters" id="jiraMilestoneFiltersBar" style="display:none"></div>
+                    <div class="work-milestone-filters" id="workMilestoneFiltersBar" style="display:none"></div>
                 </div>
 
                 <!-- Conteúdo das abas -->
-                <div class="jira-main">
+                <div class="work-main">
 
                     <!-- BACKLOG VIEW -->
-                    <div id="jiraBacklogView">
-                        <div id="jiraBacklogSprints"></div>
+                    <div id="workBacklogView">
+                        <div id="workBacklogSprints"></div>
                         <div class="tasks-grid" id="tasksGrid" style="display:none"></div>
                     </div>
 
                     <!-- BOARD VIEW -->
-                    <div id="jiraBoardView" style="display:none">
+                    <div id="workBoardView" style="display:none">
                         <div class="kanban-board" id="kanbanBoard">
                             <div class="kanban-empty" id="kanbanEmpty">
                                 <i class="fas fa-columns" style="font-size:2rem;opacity:.3"></i>
@@ -371,8 +371,8 @@
                         </div>
                     </div>
 
-                </div><!-- /jira-main -->
-                            </div><!-- /jira-shell -->
+                </div><!-- /work-main -->
+                            </div><!-- /work-shell -->
                         </section>
                     </main>
 

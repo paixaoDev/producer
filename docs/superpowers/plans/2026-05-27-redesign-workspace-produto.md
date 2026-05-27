@@ -17,7 +17,7 @@
 
 - [x] **Step 1: Replace the results header and separate roadmap/backlog sections with workspace structure**
 
-Wrap the current project overview, roadmap card, milestones, Jira shell and edital blocks inside a new workspace container. Add:
+Wrap the current project overview, roadmap card, milestones, Work shell and edital blocks inside a new workspace container. Add:
 
 ```html
 <div class="product-workspace" id="productWorkspace">
@@ -35,7 +35,7 @@ Wrap the current project overview, roadmap card, milestones, Jira shell and edit
 </div>
 ```
 
-Move the existing `roadmap-card` into `workspaceTimelinePanel`. Move `jiraShell` into the workspace and keep both `jiraBacklogView` and `jiraBoardView` inside it. Move `projectOverview`, `milestonesContainer`, `teamConfigPanel`, and `editalContainer` into drawer content templates.
+Move the existing `roadmap-card` into `workspaceTimelinePanel`. Move `workShell` into the workspace and keep both `workBacklogView` and `workBoardView` inside it. Move `projectOverview`, `milestonesContainer`, `teamConfigPanel`, and `editalContainer` into drawer content templates.
 
 - [x] **Step 2: Preserve existing IDs**
 
@@ -55,15 +55,15 @@ timelineToggleGroup
 timeline
 milestonesContainer
 milestonesGrid
-jiraShell
-jiraNavBacklog
-jiraNavBoard
-jiraBoardSprintBar
-jiraRoleAvatars
-jiraMilestoneFiltersBar
-jiraBacklogView
-jiraBacklogSprints
-jiraBoardView
+workShell
+workNavBacklog
+workNavBoard
+workBoardSprintBar
+workRoleAvatars
+workMilestoneFiltersBar
+workBacklogView
+workBacklogSprints
+workBoardView
 kanbanBoard
 editalContainer
 editalContent
@@ -76,7 +76,7 @@ editalContent
 
 - [x] **Step 1: Add workspace tab state and side panel helpers**
 
-Add functions near the Jira navigation section:
+Add functions near the Work navigation section:
 
 ```js
 let workspaceActiveTab = 'timeline';
@@ -90,8 +90,8 @@ function setWorkspaceTab(tab) {
     document.querySelectorAll('[data-workspace-panel]').forEach(panel => {
         panel.classList.toggle('active', panel.dataset.workspacePanel === tab);
     });
-    if (tab === 'backlog') jiraSetView('backlog');
-    if (tab === 'board') jiraSetView('board');
+    if (tab === 'backlog') workSetView('backlog');
+    if (tab === 'board') workSetView('board');
 }
 
 function openWorkspaceDrawer(panel) {
@@ -114,9 +114,9 @@ function closeWorkspaceDrawer() {
 }
 ```
 
-- [x] **Step 2: Keep Jira tab buttons in sync**
+- [x] **Step 2: Keep Work tab buttons in sync**
 
-Update `jiraSetView(view)` so switching to backlog or board also marks the workspace tab active when the workspace exists. Avoid recursion by only toggling classes directly when called from `setWorkspaceTab`.
+Update `workSetView(view)` so switching to backlog or board also marks the workspace tab active when the workspace exists. Avoid recursion by only toggling classes directly when called from `setWorkspaceTab`.
 
 ### Task 3: Task Description Rendering
 
@@ -128,7 +128,7 @@ Update `jiraSetView(view)` so switching to backlog or board also marks the works
 Add:
 
 ```js
-function jiraTaskDescription(task) {
+function workTaskDescription(task) {
     const value = task?.description || task?.desc || task?.details || '';
     return String(value || '').trim();
 }
@@ -136,21 +136,21 @@ function jiraTaskDescription(task) {
 
 - [x] **Step 2: Render optional descriptions in backlog rows**
 
-Replace the single title span in each `jira-sprint-task-row` with a text block:
+Replace the single title span in each `work-sprint-task-row` with a text block:
 
 ```html
-<span class="jira-task-copy">
-    <span class="jira-task-title ${isDone ? 'done-title' : ''}">${t.title}</span>
-    ${jiraTaskDescription(t) ? `<span class="jira-task-desc">${jiraTaskDescription(t)}</span>` : ''}
+<span class="work-task-copy">
+    <span class="work-task-title ${isDone ? 'done-title' : ''}">${t.title}</span>
+    ${workTaskDescription(t) ? `<span class="work-task-desc">${workTaskDescription(t)}</span>` : ''}
 </span>
 ```
 
 - [x] **Step 3: Render optional descriptions in board cards**
 
-In `jiraCreateCard`, add:
+In `workCreateCard`, add:
 
 ```html
-${jiraTaskDescription(task) ? `<div class="kcard-desc">${jiraTaskDescription(task)}</div>` : ''}
+${workTaskDescription(task) ? `<div class="kcard-desc">${workTaskDescription(task)}</div>` : ''}
 ```
 
 below the card title and above metadata.
@@ -203,17 +203,17 @@ The drawer should be fixed/absolute on the right, white, bordered, and overlay c
 
 - [x] **Step 3: Tone down existing cards**
 
-Update `.roadmap-card`, `.jira-shell`, `.milestones-container`, `.project-overview`, and `.edital-container` to use smaller radii, lighter shadows, and neutral headers.
+Update `.roadmap-card`, `.work-shell`, `.milestones-container`, `.project-overview`, and `.edital-container` to use smaller radii, lighter shadows, and neutral headers.
 
 - [x] **Step 4: Improve backlog and board task density**
 
 Update:
 
 ```css
-.jira-sprint-task-row
-.jira-task-copy
-.jira-task-title
-.jira-task-desc
+.work-sprint-task-row
+.work-task-copy
+.work-task-title
+.work-task-desc
 .kcard
 .kcard-title
 .kcard-desc

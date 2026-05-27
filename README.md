@@ -137,7 +137,7 @@ Clique em **Exportar** para baixar o roadmap completo em JSON. O arquivo contém
 }
 ```
 
-O JSON pode ser importado em ferramentas como Notion, Linear, Jira ou processado por scripts próprios.
+O JSON pode ser importado em ferramentas como Notion, Linear, Produto ou processado por scripts próprios.
 
 O botão **Copiar texto** na seção de Resumo para Edital copia o texto formatado diretamente para a área de transferência.
 

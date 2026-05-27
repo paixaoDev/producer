@@ -4,17 +4,17 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('script.js', 'utf8');
 const helperNames = [
-    'jiraSortMilestonesForFilter',
-    'jiraNormalizeMilestoneText',
-    'jiraFilterMilestoneOptions',
-    'jiraGetMilestoneQuickLabel',
-    'jiraGetMilestoneSelectedLabel',
-    'jiraGetMilestoneForObjective',
-    'jiraGetMilestoneTaskLabel',
-    'jiraGetSprintGroupLabel',
-    'jiraBuildBacklogItemsForMilestoneFilter',
+    'workSortMilestonesForFilter',
+    'workNormalizeMilestoneText',
+    'workFilterMilestoneOptions',
+    'workGetMilestoneQuickLabel',
+    'workGetMilestoneSelectedLabel',
+    'workGetMilestoneForObjective',
+    'workGetMilestoneTaskLabel',
+    'workGetSprintGroupLabel',
+    'workBuildBacklogItemsForMilestoneFilter',
 ];
-const helperStart = source.indexOf('function jiraSortMilestonesForFilter');
+const helperStart = source.indexOf('function workSortMilestonesForFilter');
 const helperEnd = source.indexOf('// ── Filtro de marco', helperStart);
 const helperSource = helperNames.map(name => `globalThis.${name} = typeof ${name} === 'function' ? ${name} : undefined;`).join('\n');
 const context = {};
@@ -29,49 +29,49 @@ const milestones = [
 ];
 
 assert.deepEqual(
-    context.jiraSortMilestonesForFilter(milestones).map(ms => ms.id),
+    context.workSortMilestonesForFilter(milestones).map(ms => ms.id),
     ['m1', 'm2', 'm3'],
 );
 
-assert.equal(context.jiraNormalizeMilestoneText('Protótipo Jogável'), 'prototipo jogavel');
+assert.equal(context.workNormalizeMilestoneText('Protótipo Jogável'), 'prototipo jogavel');
 
 assert.deepEqual(
-    context.jiraFilterMilestoneOptions(milestones, 'proto').map(ms => ms.id),
+    context.workFilterMilestoneOptions(milestones, 'proto').map(ms => ms.id),
     ['m1'],
 );
 
 assert.deepEqual(
-    context.jiraFilterMilestoneOptions(milestones, 'vertical slice').map(ms => ms.id),
+    context.workFilterMilestoneOptions(milestones, 'vertical slice').map(ms => ms.id),
     ['m2'],
 );
 
 assert.deepEqual(
-    context.jiraFilterMilestoneOptions(milestones, 'mês 8').map(ms => ms.id),
+    context.workFilterMilestoneOptions(milestones, 'mês 8').map(ms => ms.id),
     ['m3'],
 );
 
 assert.equal(
-    context.jiraGetMilestoneQuickLabel(milestones[1]),
+    context.workGetMilestoneQuickLabel(milestones[1]),
     'Primeiro marco: Prototipo Jogavel',
 );
 
 assert.equal(
-    context.jiraGetMilestoneSelectedLabel(milestones[2]),
+    context.workGetMilestoneSelectedLabel(milestones[2]),
     'Vertical Slice · Mês 5',
 );
 
 assert.equal(
-    context.jiraGetMilestoneForObjective({ startMonth: 1, endMonth: 4 }, milestones).id,
+    context.workGetMilestoneForObjective({ startMonth: 1, endMonth: 4 }, milestones).id,
     'm1',
 );
 
 assert.equal(
-    context.jiraGetMilestoneTaskLabel(milestones[1]),
+    context.workGetMilestoneTaskLabel(milestones[1]),
     'Prototipo Jogavel',
 );
 
 assert.equal(
-    context.jiraGetSprintGroupLabel(0),
+    context.workGetSprintGroupLabel(0),
     'Selecionar tudo',
 );
 
@@ -94,7 +94,7 @@ const objectives = [
 
 assert.equal(
     JSON.stringify(
-        context.jiraBuildBacklogItemsForMilestoneFilter(objectives, milestones, new Set(['programming', 'art']), 'm1')
+        context.workBuildBacklogItemsForMilestoneFilter(objectives, milestones, new Set(['programming', 'art']), 'm1')
             .map(item => [item.obj.id, item.kr.id, item.ms.id])
     ),
     JSON.stringify([['obj_proto', 'kr_proto', 'm1']]),
