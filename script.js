@@ -5033,6 +5033,8 @@ let kanbanDraggedTaskId = null;
 let kanbanDraggedFromCol = null;
 let kanbanTaskStates = {};
 let jiraBoardSelections = {};
+let workspaceActiveTab = 'timeline';
+let workspaceActiveDrawer = null;
 
 const ALL_ROLES = ['programming', 'art', 'design', 'audio', 'qa'];
 const ROLE_LABELS = { programming:'Programador', art:'Artista', design:'Designer', audio:'Áudio', qa:'QA' };
@@ -5077,6 +5079,10 @@ function jiraIsBoardTaskSelected(objId, krId, taskId) {
 function jiraTaskKanbanState(ref) {
     if (!ref) return null;
     return kanbanTaskStates[ref.key] || kanbanTaskStates[ref.task.id] || null;
+}
+function jiraTaskDescription(task) {
+    const value = task?.description || task?.desc || task?.details || '';
+    return String(value || '').trim();
 }
 function jiraSetTaskDone(ref, done) {
     if (!ref) return;
@@ -5153,6 +5159,44 @@ function jiraInit() {
     backlogGroupMode = 'sprint';
     jiraUpdateAvatarUI();
     jiraSetView('backlog');
+    setWorkspaceTab('timeline');
+}
+
+// ── Workspace principal ───────────────────────────────────────
+function syncWorkspaceTab(tab) {
+    workspaceActiveTab = tab;
+    document.querySelectorAll('[data-workspace-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.workspaceTab === tab);
+    });
+    document.querySelectorAll('[data-workspace-panel]').forEach(panel => {
+        const target = panel.dataset.workspacePanel;
+        panel.classList.toggle('active', target === tab || (target === 'work' && (tab === 'backlog' || tab === 'board')));
+    });
+}
+
+function setWorkspaceTab(tab) {
+    syncWorkspaceTab(tab);
+    if (tab === 'backlog') jiraSetView('backlog');
+    if (tab === 'board') jiraSetView('board');
+}
+
+function openWorkspaceDrawer(panel) {
+    workspaceActiveDrawer = panel;
+    const drawer = document.getElementById('workspaceDrawer');
+    if (!drawer) return;
+    document.querySelectorAll('[data-drawer-panel]').forEach(el => {
+        el.hidden = el.dataset.drawerPanel !== panel;
+    });
+    document.querySelectorAll('[data-workspace-drawer]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.workspaceDrawer === panel);
+    });
+    drawer.classList.add('open');
+}
+
+function closeWorkspaceDrawer() {
+    workspaceActiveDrawer = null;
+    document.getElementById('workspaceDrawer')?.classList.remove('open');
+    document.querySelectorAll('[data-workspace-drawer]').forEach(btn => btn.classList.remove('active'));
 }
 
 // ── Navegação Backlog / Board ─────────────────────────────────
@@ -5162,22 +5206,26 @@ function jiraSetView(view) {
     const navBacklog  = document.getElementById('jiraNavBacklog');
     const navBoard    = document.getElementById('jiraNavBoard');
     const sprintBar   = document.getElementById('jiraBoardSprintBar');
+    const tabsBar     = document.querySelector('.jira-tabs-bar');
     if (!backlogView || !boardView) return;
 
     const msFiltersBar = document.getElementById('jiraMilestoneFiltersBar');
     const barDivider   = document.querySelector('.jira-bar-divider');
+    syncWorkspaceTab(view);
     if (view === 'backlog') {
         backlogView.style.display = 'block';
         boardView.style.display   = 'none';
         navBacklog.classList.add('active');
         navBoard.classList.remove('active');
         if (sprintBar) sprintBar.style.display = 'none';
+        if (tabsBar?.closest('.workspace-driven')) tabsBar.style.display = 'none';
         jiraRenderBacklog(); // também popula filtros de marco
     } else {
         backlogView.style.display = 'none';
         boardView.style.display   = 'block';
         navBoard.classList.add('active');
         navBacklog.classList.remove('active');
+        if (tabsBar?.closest('.workspace-driven')) tabsBar.style.display = 'flex';
         if (sprintBar) sprintBar.style.display = 'flex';
         if (msFiltersBar) msFiltersBar.style.display = 'none';
         if (barDivider)   barDivider.style.display   = 'none';
@@ -5563,6 +5611,7 @@ function jiraRenderBacklog() {
             const isDoing = ks === 'doing';
             const isSelected = jiraIsBoardTaskSelected(obj.id, kr.id, t.id);
             const sCls = isDone ? 'jira-task-status-done' : isDoing ? 'jira-task-status-doing' : 'jira-task-status-todo';
+            const description = jiraTaskDescription(t);
             const row = document.createElement('div');
             row.className = `jira-sprint-task-row ${sCls}${isSelected ? ' board-selected' : ''}`;
             row.dataset.boardTaskKey = taskKey;
@@ -5577,7 +5626,10 @@ function jiraRenderBacklog() {
                 </button>
                 <div class="jira-task-status-dot"></div>
                 <span class="jira-task-id" style="color:${color}">${role.substring(0,3).toUpperCase()}-${ti+1}</span>
-                <span class="jira-task-title ${isDone?'done-title':''}">${t.title}</span>
+                <span class="jira-task-copy">
+                    <span class="jira-task-title ${isDone?'done-title':''}">${t.title}</span>
+                    ${description ? `<span class="jira-task-desc">${description}</span>` : ''}
+                </span>
                 <span class="jira-task-prio priority-${t.priority}">${t.priority}</span>
                 <span class="jira-task-days">⏱${t.estimatedDays||2}d</span>
             `;
@@ -5767,9 +5819,11 @@ function jiraCreateCard(ref, colName) {
     const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
     const color = areaColors[obj.area] || '#6366f1';
     const sprintLabel = kr.sprintNumber ? `Sprint ${kr.sprintNumber}` : 'Sem sprint';
+    const description = jiraTaskDescription(task);
 
     card.innerHTML = `
         <div class="kcard-title">${task.title}</div>
+        ${description ? `<div class="kcard-desc">${description}</div>` : ''}
         <div class="kcard-meta">
             <span class="meta-badge" style="background:${color}18;color:${color}">${sprintLabel}</span>
             <span class="meta-badge priority-${task.priority}">${task.priority}</span>

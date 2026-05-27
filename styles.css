@@ -6,8 +6,8 @@
 }
 
 :root {
-    --primary-color: #6366f1;
-    --primary-dark: #4f46e5;
+    --primary-color: #0c66e4;
+    --primary-dark: #0747a6;
     --secondary-color: #f59e0b;
     --success-color: #10b981;
     --danger-color: #ef4444;
@@ -43,7 +43,7 @@
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #f4f5f7;
     min-height: 100vh;
     color: var(--gray-800);
     line-height: 1.6;
@@ -355,27 +355,28 @@ body {
 
 /* Header */
 .header {
-    text-align: center;
-    padding: 60px 0 40px;
-    color: white;
+    text-align: left;
+    padding: 18px 0 14px;
+    color: #172b4d;
 }
 
 .header-content h1 {
-    font-size: 3rem;
+    font-size: 1.05rem;
     font-weight: 700;
-    margin-bottom: 10px;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2px;
+    text-shadow: none;
 }
 
 .header-content h1 i {
-    margin-right: 15px;
-    color: var(--secondary-color);
+    margin-right: 8px;
+    color: var(--primary-color);
 }
 
 .header-content p {
-    font-size: 1.2rem;
-    opacity: 0.9;
-    font-weight: 300;
+    font-size: 0.82rem;
+    opacity: 1;
+    color: var(--gray-500);
+    font-weight: 400;
 }
 
 /* Upload Section */
@@ -601,11 +602,11 @@ body {
 
 /* Results Section */
 .results-section {
-    background: white;
-    border-radius: var(--border-radius-xl);
-    box-shadow: var(--shadow-xl);
-    margin-bottom: 40px;
-    overflow: hidden;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    margin-bottom: 32px;
+    overflow: visible;
 }
 
 .results-header {
@@ -666,11 +667,265 @@ body {
     transform: translateY(-1px);
 }
 
+/* Product workspace */
+.product-workspace {
+    border: 1px solid #dfe1e6;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.workspace-topbar {
+    min-height: 64px;
+    display: grid;
+    grid-template-columns: auto minmax(180px, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #dfe1e6;
+    background: #ffffff;
+}
+
+.workspace-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: #172b4d;
+    font-size: 0.86rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+
+.workspace-brand i {
+    color: var(--primary-color);
+    font-size: 0.95rem;
+}
+
+.workspace-title-block {
+    min-width: 0;
+}
+
+.workspace-kicker,
+.workspace-drawer-kicker {
+    display: block;
+    color: var(--gray-500);
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.workspace-title-block h2 {
+    margin: 0;
+    color: #172b4d;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.workspace-actions .btn-save-project,
+.workspace-actions .btn-primary,
+.workspace-actions .btn-secondary {
+    min-height: 34px;
+    padding: 7px 11px;
+    border-radius: 5px;
+    font-size: 0.78rem;
+    box-shadow: none;
+}
+
+.workspace-actions .btn-primary,
+.workspace-actions .btn-save-project {
+    background: var(--primary-color);
+    color: #ffffff;
+}
+
+.workspace-actions .btn-secondary {
+    background: #f4f5f7;
+    color: #44546f;
+    border: 1px solid #dfe1e6;
+}
+
+.workspace-actions .btn-primary:hover,
+.workspace-actions .btn-save-project:hover {
+    background: var(--primary-dark);
+}
+
+.workspace-actions .btn-secondary:hover {
+    background: #ebecf0;
+    color: #172b4d;
+}
+
+.workspace-body {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 56px;
+    min-height: 620px;
+    background: #f7f8fa;
+}
+
+.workspace-main {
+    min-width: 0;
+    padding: 1rem;
+}
+
+.workspace-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid #dfe1e6;
+}
+
+.workspace-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.65rem 0.85rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: #44546f;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.84rem;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.workspace-tab:hover {
+    color: #172b4d;
+    background: #f1f2f4;
+}
+
+.workspace-tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.workspace-panel {
+    display: none;
+    min-width: 0;
+}
+
+.workspace-panel.active {
+    display: block;
+}
+
+.workspace-side-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 1rem 0.55rem;
+    border-left: 1px solid #dfe1e6;
+    background: #ffffff;
+}
+
+.workspace-rail-btn,
+.workspace-drawer-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #dfe1e6;
+    background: #ffffff;
+    color: #44546f;
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s, box-shadow 0.14s;
+}
+
+.workspace-rail-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    font-size: 0.9rem;
+}
+
+.workspace-rail-btn:hover,
+.workspace-rail-btn.active {
+    border-color: var(--primary-color);
+    background: #e9f2ff;
+    color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.12);
+}
+
+.workspace-drawer {
+    position: absolute;
+    top: 0;
+    right: 56px;
+    z-index: 30;
+    width: min(420px, calc(100% - 56px));
+    max-width: 100%;
+    height: 100%;
+    padding: 1rem;
+    overflow-y: auto;
+    border-left: 1px solid #dfe1e6;
+    background: #ffffff;
+    box-shadow: -12px 0 24px rgb(9 30 66 / 0.12);
+    transform: translateX(calc(100% + 56px));
+    transition: transform 0.2s ease;
+}
+
+.workspace-drawer.open {
+    transform: translateX(0);
+}
+
+.workspace-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid #dfe1e6;
+}
+
+.workspace-drawer-header h3 {
+    margin: 0;
+    color: #172b4d;
+    font-size: 1rem;
+    line-height: 1.3;
+}
+
+.workspace-drawer-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+}
+
+.workspace-drawer-close:hover {
+    background: #f1f2f4;
+    color: #172b4d;
+}
+
+.workspace-drawer-panel[hidden] {
+    display: none;
+}
+
+.drawer-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    color: #172b4d;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
 /* Project Overview — compact strip */
 .project-overview {
-    padding: 0.75rem 2rem;
-    border-bottom: 1px solid var(--gray-200);
-    background: var(--gray-50);
+    padding: 0;
+    border-bottom: 0;
+    background: transparent;
 }
 
 /* Visão geral — 3 linhas: metadados / descrição / stats */
@@ -730,19 +985,20 @@ body {
    ============================================================ */
 .roadmap-card {
     background: white;
-    border-radius: var(--border-radius-xl);
-    box-shadow: var(--shadow-lg);
-    margin-bottom: 2rem;
+    border-radius: 6px;
+    box-shadow: none;
+    margin-bottom: 0;
     overflow: hidden;
-    border: 1px solid var(--gray-200);
+    border: 1px solid #dfe1e6;
 }
 
 .roadmap-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1.5rem;
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    padding: 0.75rem 1rem;
+    background: #ffffff;
+    border-bottom: 1px solid #dfe1e6;
     gap: 1rem;
     flex-wrap: wrap;
 }
@@ -751,8 +1007,8 @@ body {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    color: white;
-    font-size: 1.1rem;
+    color: #172b4d;
+    font-size: 0.94rem;
     font-weight: 700;
 }
 
@@ -766,8 +1022,9 @@ body {
 /* Toggle simples / detalhado */
 .timeline-toggle-group {
     display: flex;
-    background: rgba(255,255,255,0.15);
-    border-radius: 8px;
+    background: #f4f5f7;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
     padding: 3px;
     gap: 2px;
 }
@@ -779,7 +1036,7 @@ body {
     font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
-    color: rgba(255,255,255,0.7);
+    color: #44546f;
     background: transparent;
     transition: all 0.2s;
     display: flex;
@@ -788,17 +1045,18 @@ body {
 }
 
 .timeline-toggle-btn:hover {
-    color: white;
-    background: rgba(255,255,255,0.15);
+    color: #172b4d;
+    background: #ebecf0;
 }
 
 .timeline-toggle-btn.active {
     background: white;
-    color: var(--primary-dark);
+    color: var(--primary-color);
+    box-shadow: var(--shadow-sm);
 }
 
 .roadmap-card-body {
-    padding: 1.5rem;
+    padding: 1rem;
 }
 
 /* compat — mantém o antigo .roadmap-container funcionando se ainda usado */
@@ -1774,10 +2032,10 @@ body {
    ============================================================ */
 .milestones-container {
     background: white;
-    border-radius: var(--border-radius-xl);
-    padding: 1.25rem 1.75rem;
-    box-shadow: var(--shadow-lg);
-    margin-bottom: 2rem;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    margin-bottom: 0;
 }
 
 .milestones-header {
@@ -1789,7 +2047,7 @@ body {
 
 .milestones-header h3 {
     color: var(--gray-800);
-    font-size: 1.1rem;
+    font-size: 0.94rem;
     font-weight: 700;
     display: flex;
     align-items: center;
@@ -1996,23 +2254,23 @@ body {
    ============================================================ */
 .edital-container {
     background: white;
-    border-radius: var(--border-radius-xl);
-    padding: 2rem;
-    box-shadow: var(--shadow-lg);
-    margin-bottom: 2rem;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    margin-bottom: 0;
 }
 .edital-header-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     flex-wrap: wrap;
     gap: 0.75rem;
 }
 .edital-header-row h3 {
     color: var(--gray-800);
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: 0.94rem;
+    font-weight: 700;
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -2598,6 +2856,36 @@ body {
     border-radius: var(--border-radius-lg);
     padding: 0.4rem 0.85rem;
     border: 1px solid rgba(255,255,255,0.2);
+}
+
+.workspace-drawer .team-config-container {
+    background: #f7f8fa;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
+    padding: 0.8rem;
+}
+
+.workspace-drawer .team-summary-item,
+.workspace-drawer .team-config-duration-row {
+    color: #44546f;
+}
+
+.workspace-drawer .team-summary-count {
+    background: #e9f2ff;
+    color: var(--primary-color);
+}
+
+.workspace-drawer .team-customize-btn {
+    background: #ffffff;
+    border-color: #dfe1e6;
+    color: #44546f;
+}
+
+.workspace-drawer .team-customize-btn:hover,
+.workspace-drawer .team-customize-btn.active {
+    background: #e9f2ff;
+    border-color: var(--primary-color);
+    color: var(--primary-color);
 }
 
 /* Linha de sumário: dots + nome + número */
@@ -3223,19 +3511,19 @@ body {
 
 .jira-shell {
     background: white;
-    border: 1px solid var(--gray-200);
-    border-radius: var(--border-radius-lg);
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
     overflow: hidden;
-    margin-top: 1.5rem;
-    box-shadow: var(--shadow-sm);
+    margin-top: 0;
+    box-shadow: none;
 }
 
 /* Linha 1: abas Backlog / Board */
 .jira-tabs-bar {
     display: flex;
     align-items: center;
-    border-bottom: 2px solid var(--gray-200);
-    background: var(--gray-50);
+    border-bottom: 1px solid #dfe1e6;
+    background: #ffffff;
     padding: 0 1rem;
 }
 .jira-tab {
@@ -3259,7 +3547,10 @@ body {
 .jira-tab.active {
     color: var(--primary-color);
     border-bottom-color: var(--primary-color);
-    background: white;
+    background: #ffffff;
+}
+.workspace-driven .jira-tab {
+    display: none;
 }
 .jira-tabs-sep { flex: 1; }
 .jira-board-sprint-selector {
@@ -3275,7 +3566,7 @@ body {
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 1rem;
-    border-bottom: 1px solid var(--gray-100);
+    border-bottom: 1px solid #dfe1e6;
     background: white;
     flex-wrap: wrap;
 }
@@ -3339,23 +3630,24 @@ body {
 
 /* Conteúdo principal */
 .jira-main {
-    padding: 1.25rem 1.5rem;
+    padding: 1rem;
     min-height: 400px;
+    background: #ffffff;
 }
 
 /* Backlog: marcos e sprints colapsáveis */
 .jira-sprint-group {
-    border: 1px solid var(--gray-200);
-    border-radius: 8px;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
     overflow: hidden;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
 }
 .jira-sprint-header {
     display: flex;
     align-items: center;
     gap: 0.65rem;
-    padding: 0.7rem 1rem;
-    background: var(--gray-50);
+    padding: 0.62rem 0.8rem;
+    background: #fafbfc;
     cursor: pointer;
     transition: background 0.12s;
     user-select: none;
@@ -3371,7 +3663,7 @@ body {
 .jira-sprint-group.collapsed .jira-sprint-chevron { transform: rotate(-90deg); }
 .jira-sprint-group.collapsed .jira-sprint-body { display: none; }
 .jira-sprint-name {
-    font-size: 0.88rem;
+    font-size: 0.84rem;
     font-weight: 700;
     color: var(--gray-800);
     flex: 1;
@@ -3635,11 +3927,11 @@ body {
 /* Linha de tarefa no backlog */
 .jira-sprint-task-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.55rem;
-    padding: 0.4rem 1rem;
+    padding: 0.55rem 0.8rem;
     border-bottom: 1px solid var(--gray-100);
-    font-size: 0.79rem;
+    font-size: 0.8rem;
     color: var(--gray-700);
     transition: background 0.1s;
 }
@@ -3695,16 +3987,42 @@ body {
     font-weight: 600;
     white-space: nowrap;
     min-width: 55px;
+    padding-top: 1px;
 }
-.jira-task-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jira-task-copy {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+}
+.jira-task-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #172b4d;
+    font-weight: 500;
+    line-height: 1.35;
+}
 .jira-task-title.done-title { text-decoration: line-through; color: var(--gray-400); }
-.jira-task-days { font-size: 0.69rem; color: var(--gray-400); white-space: nowrap; }
+.jira-task-desc {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--gray-500);
+    font-size: 0.73rem;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+.jira-task-days { font-size: 0.69rem; color: var(--gray-400); white-space: nowrap; padding-top: 1px; }
 .jira-task-prio {
     font-size: 0.64rem;
     font-weight: 600;
     padding: 1px 5px;
     border-radius: 3px;
     white-space: nowrap;
+    margin-top: 1px;
 }
 
 /* Kanban Board */
@@ -3729,9 +4047,9 @@ body {
     align-items: start;
 }
 .kanban-col {
-    background: var(--gray-50);
-    border: 1px solid var(--gray-200);
-    border-radius: var(--border-radius-lg);
+    background: #f7f8fa;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
     overflow: hidden;
 }
 .kanban-col-header {
@@ -3774,16 +4092,26 @@ body {
 /* Kanban card */
 .kcard {
     background: white;
-    border: 1px solid var(--gray-200);
-    border-radius: 7px;
-    padding: 0.65rem 0.85rem;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
+    padding: 0.7rem 0.8rem;
     cursor: grab;
     transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
     user-select: none;
 }
-.kcard:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); border-color: var(--primary-color); }
+.kcard:hover { box-shadow: var(--shadow); transform: translateY(-1px); border-color: #b3d4ff; }
 .kcard.dragging { opacity: 0.45; cursor: grabbing; }
-.kcard-title { font-size: 0.8rem; font-weight: 500; color: var(--gray-800); line-height: 1.45; margin-bottom: 0.5rem; }
+.kcard-title { font-size: 0.82rem; font-weight: 650; color: #172b4d; line-height: 1.4; margin-bottom: 0.35rem; }
+.kcard-desc {
+    display: -webkit-box;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+    color: var(--gray-500);
+    font-size: 0.74rem;
+    line-height: 1.4;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
 .kcard-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; }
 .kcard-days { margin-left: auto; font-size: 0.68rem; color: var(--gray-400); }
 .kcard-context {
@@ -3873,23 +4201,23 @@ body {
 
 /* ── Seção de sprint no modo "Por Sprint" ── */
 .backlog-sprint-section {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
 .backlog-sprint-section-header {
     display: flex;
     align-items: center;
     gap: 0.6rem;
     padding: 0.55rem 0.75rem;
-    background: var(--gray-100);
-    border: 1px solid var(--gray-200);
-    border-radius: 8px 8px 0 0;
+    background: #f4f5f7;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px 6px 0 0;
     cursor: pointer;
     user-select: none;
     transition: background 0.12s;
 }
-.backlog-sprint-section-header:hover { background: var(--gray-200); }
+.backlog-sprint-section-header:hover { background: #ebecf0; }
 .backlog-sprint-section.collapsed .backlog-sprint-section-header {
-    border-radius: 8px;
+    border-radius: 6px;
 }
 .backlog-sprint-section.collapsed > .jira-sprint-group { display: none; }
 .backlog-sprint-chevron {
@@ -3931,7 +4259,7 @@ body {
     margin-bottom: 0;
 }
 .backlog-sprint-section > .jira-sprint-group:last-child {
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 6px 6px;
     margin-bottom: 0;
 }
 
@@ -3959,8 +4287,56 @@ body {
 }
 
 @media (max-width: 900px) {
+    .workspace-topbar {
+        grid-template-columns: 1fr;
+        align-items: flex-start;
+    }
+    .workspace-actions {
+        justify-content: flex-start;
+    }
+    .workspace-body {
+        grid-template-columns: minmax(0, 1fr) 48px;
+    }
+    .workspace-main {
+        padding: 0.75rem;
+    }
+    .workspace-tabs {
+        overflow-x: auto;
+    }
+    .workspace-side-rail {
+        padding: 0.75rem 0.35rem;
+    }
+    .workspace-rail-btn {
+        width: 34px;
+        height: 34px;
+    }
+    .workspace-drawer {
+        right: 48px;
+        width: min(380px, calc(100% - 48px));
+        transform: translateX(calc(100% + 48px));
+    }
     .jira-tabs-bar { padding: 0 0.5rem; }
     .kanban-cols { grid-template-columns: 1fr; }
     .kanban-select { min-width: 160px; }
     .avatar-circle { width: 28px; height: 28px; font-size: 0.88rem; }
+}
+
+@media (max-width: 620px) {
+    .container {
+        padding: 0 10px;
+    }
+    .workspace-actions .btn-save-project span,
+    .workspace-actions .btn-primary span,
+    .workspace-actions .btn-secondary {
+        font-size: 0.74rem;
+    }
+    .jira-sprint-task-row {
+        flex-wrap: wrap;
+    }
+    .jira-task-copy {
+        flex-basis: calc(100% - 96px);
+    }
+    .jira-task-prio {
+        margin-left: 75px;
+    }
 }
