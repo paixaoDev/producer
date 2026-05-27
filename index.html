@@ -59,6 +59,14 @@
                 <i class="fas fa-plus"></i>
             </button>
         </div>
+        <div class="project-create-menu" id="projectCreateMenu" hidden>
+            <button type="button" id="projectCreateNewBtn">
+                <i class="fas fa-plus"></i> Nova análise
+            </button>
+            <button type="button" id="projectImportJsonBtn">
+                <i class="fas fa-file-import"></i> Importar JSON
+            </button>
+        </div>
         <div class="sidebar-list" id="projectsList">
             <!-- Preenchido dinamicamente -->
         </div>
@@ -216,18 +224,9 @@
                         <h2 id="resultsProjectTitle">Roadmap do Projeto</h2>
                     </div>
                     <div class="results-actions workspace-actions">
-                        <button class="btn-save-project" id="saveProjectBtn" onclick="saveCurrentProject()">
-                            <i class="fas fa-save"></i> <span id="saveProjectBtnLabel">Salvar Projeto</span>
-                        </button>
-                        <button class="btn-secondary" id="importJsonBtn" onclick="document.getElementById('jsonImportInput').click()">
-                            <i class="fas fa-file-import"></i> Importar JSON
-                        </button>
-                        <button class="btn-secondary" id="exportBtn">
-                            <i class="fas fa-download"></i> Exportar
-                        </button>
-                        <button class="btn-primary" id="newAnalysisBtn">
-                            <i class="fas fa-plus"></i> Nova Análise
-                        </button>
+                        <span class="workspace-autosave-status" id="workspaceAutosaveStatus">
+                            <i class="fas fa-check-circle"></i> Salvamento automático
+                        </span>
                     </div>
                 </div>
 
@@ -390,6 +389,9 @@
                         <button class="workspace-rail-btn" data-workspace-drawer="edital" onclick="openWorkspaceDrawer('edital')" title="Edital" type="button">
                             <i class="fas fa-file-contract"></i>
                         </button>
+                        <button class="workspace-rail-btn" data-workspace-drawer="actions" onclick="openWorkspaceDrawer('actions')" title="Ações" type="button">
+                            <i class="fas fa-ellipsis-h"></i>
+                        </button>
                     </aside>
 
                     <aside class="workspace-drawer" id="workspaceDrawer" aria-label="Painel lateral">
@@ -443,6 +445,26 @@
                                     <!-- Texto do edital será gerado dinamicamente -->
                                 </div>
                             </div>
+                        </div>
+
+                        <div class="workspace-drawer-panel" data-drawer-panel="actions" hidden>
+                            <div class="drawer-section-title">
+                                <i class="fas fa-ellipsis-h"></i>
+                                <span>Ações</span>
+                            </div>
+                            <div class="workspace-action-list">
+                                <button class="workspace-action-btn" id="exportBtn" type="button">
+                                    <i class="fas fa-download"></i>
+                                    <span>Exportar roadmap</span>
+                                </button>
+                                <button class="workspace-action-btn danger" id="newAnalysisBtn" type="button">
+                                    <i class="fas fa-plus"></i>
+                                    <span>Nova análise</span>
+                                </button>
+                            </div>
+                            <button class="btn-save-project workspace-hidden-save" id="saveProjectBtn" onclick="saveCurrentProject()" type="button">
+                                <i class="fas fa-save"></i> <span id="saveProjectBtnLabel">Salvar Projeto</span>
+                            </button>
                         </div>
                     </aside>
                 </div>

@@ -1305,7 +1305,10 @@ function initializeEventListeners() {
     removeFile.addEventListener('click', clearFile);
     analyzeBtn.addEventListener('click', analyzeDocument);
     exportBtn.addEventListener('click', exportResults);
-    newAnalysisBtn.addEventListener('click', resetToUpload);
+    newAnalysisBtn.addEventListener('click', () => {
+        if (analysisResult) saveCurrentProject({ auto: true, notify: false });
+        resetToUpload();
+    });
 
     // Input de importação de JSON
     initJsonImport();
@@ -2997,6 +3000,7 @@ function showResults() {
     recomputeSchedule();   // calcula scheduledResult antes de renderizar
     populateResults();
     saveApplicationState();
+    if (!getActiveProjectId()) saveCurrentProject({ auto: true, notify: false });
     // Atualiza botão salvar para refletir se há projeto ativo
     if (typeof updateSaveBtn === 'function') updateSaveBtn();
 }
@@ -3022,6 +3026,7 @@ function onTeamConfigChange() {
     } catch (e) {
         console.error('Erro ao re-renderizar após mudança de equipe:', e);
     }
+    scheduleWorkspaceAutoSave();
 }
 
 /**
@@ -4491,9 +4496,11 @@ function countTasks(analysis, taskProgress) {
 }
 
 // Salva o projeto atual (análise + equipe + scheduled)
-function saveCurrentProject() {
+function saveCurrentProject(options = {}) {
+    const notify = options?.notify !== false;
+    const auto = options?.auto === true;
     if (!analysisResult) {
-        showNotification('Nenhum roadmap para salvar.', 'error');
+        if (notify) showNotification('Nenhum roadmap para salvar.', 'error');
         return;
     }
 
@@ -4520,7 +4527,7 @@ function saveCurrentProject() {
         // Atualiza projeto existente
         projects[projectId].data = projectData;
         projects[projectId].savedAt = Date.now();
-        showNotification(`"${projects[projectId].name}" atualizado!`, 'success');
+        if (notify) showNotification(auto ? `"${projects[projectId].name}" salvo automaticamente.` : `"${projects[projectId].name}" atualizado!`, 'success');
     } else {
         // Cria novo projeto
         projectId = genProjectId();
@@ -4534,7 +4541,7 @@ function saveCurrentProject() {
             data: projectData
         };
         setActiveProjectId(projectId);
-        showNotification(`"${title}" salvo!`, 'success');
+        if (notify) showNotification(auto ? `"${title}" salvo automaticamente.` : `"${title}" salvo!`, 'success');
     }
 
     saveAllProjects(projects);
@@ -4747,27 +4754,49 @@ function toggleSidebar() {
 function closeSidebar() {
     const sidebar = document.getElementById('projectsSidebar');
     const overlay = document.getElementById('sidebarOverlay');
+    const createMenu = document.getElementById('projectCreateMenu');
     if (sidebar) sidebar.classList.remove('open');
     if (overlay) overlay.classList.remove('active');
+    if (createMenu) createMenu.hidden = true;
 }
 
-// Botão "Novo Projeto" na sidebar: limpa estado e vai para upload
+// Botão "+" na sidebar: abre menu de criação/importação
 document.addEventListener('DOMContentLoaded', () => {
     const newBtn = document.getElementById('newProjectBtn');
+    const createMenu = document.getElementById('projectCreateMenu');
+    const createNewBtn = document.getElementById('projectCreateNewBtn');
+    const importJsonBtn = document.getElementById('projectImportJsonBtn');
+    const startNewAnalysis = () => {
+        if (analysisResult && !confirm('Abrir novo projeto? O roadmap atual será salvo automaticamente antes de sair.')) return;
+        if (analysisResult) saveCurrentProject({ auto: true, notify: false });
+        setActiveProjectId(null);
+        analysisResult = null;
+        scheduledResult = null;
+        jiraBoardSelections = {};
+        jiraSaveBoardSelections();
+        Object.assign(teamConfig, { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 });
+        resetToUpload();
+        closeSidebar();
+        updateSaveBtn();
+    };
     if (newBtn) {
-        newBtn.addEventListener('click', () => {
-            if (analysisResult && !confirm('Abrir novo projeto? O roadmap atual não salvo será perdido.')) return;
-            setActiveProjectId(null);
-            analysisResult = null;
-            scheduledResult = null;
-            jiraBoardSelections = {};
-            jiraSaveBoardSelections();
-            Object.assign(teamConfig, { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 });
-            resetToUpload();
-            closeSidebar();
-            updateSaveBtn();
+        newBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if (createMenu) createMenu.hidden = !createMenu.hidden;
         });
     }
+    if (createNewBtn) createNewBtn.addEventListener('click', startNewAnalysis);
+    if (importJsonBtn) {
+        importJsonBtn.addEventListener('click', () => {
+            if (createMenu) createMenu.hidden = true;
+            document.getElementById('jsonImportInput')?.click();
+        });
+    }
+    document.addEventListener('click', (event) => {
+        if (!createMenu || createMenu.hidden) return;
+        if (event.target.closest('#projectCreateMenu') || event.target.closest('#newProjectBtn')) return;
+        createMenu.hidden = true;
+    });
 
     // Inicializa sidebar e badge ao entrar no app
     const origShowApp = window._origShowApp;
@@ -4801,6 +4830,7 @@ window.toggleSprintTask = function(checkbox) {
     if (!projects[activeId]) return;
     projects[activeId].data.taskProgress = captureTaskProgress();
     saveAllProjects(projects);
+    scheduleWorkspaceAutoSave();
 
     // Atualiza barra de progresso na sidebar se estiver aberta
     const sidebar = document.getElementById('projectsSidebar');
@@ -5038,6 +5068,7 @@ let kanbanTaskStates = {};
 let jiraBoardSelections = {};
 let workspaceActiveTab = 'timeline';
 let workspaceActiveDrawer = null;
+let workspaceAutoSaveTimer = null;
 
 const ALL_ROLES = ['programming', 'art', 'design', 'audio', 'qa'];
 const ROLE_LABELS = { programming:'Programador', art:'Artista', design:'Designer', audio:'Áudio', qa:'QA' };
@@ -5119,11 +5150,13 @@ function jiraSetBoardTasks(refs, selected) {
     refs.forEach(ref => jiraSetBoardTask(ref.obj.id, ref.kr.id, ref.task.id, selected));
     jiraSaveBoardSelections();
     kanbanSaveStates();
+    scheduleWorkspaceAutoSave();
 }
 function jiraToggleBoardTask(e, objId, krId, taskId) {
     if (e) e.stopPropagation();
     jiraSetBoardTask(objId, krId, taskId, !jiraIsBoardTaskSelected(objId, krId, taskId));
     jiraSaveBoardSelections();
+    scheduleWorkspaceAutoSave();
     jiraRefreshCurrentView();
 }
 function jiraToggleBoardKr(e, objId, krId) {
@@ -5200,6 +5233,22 @@ function closeWorkspaceDrawer() {
     workspaceActiveDrawer = null;
     document.getElementById('workspaceDrawer')?.classList.remove('open');
     document.querySelectorAll('[data-workspace-drawer]').forEach(btn => btn.classList.remove('active'));
+}
+
+function setWorkspaceAutoSaveStatus(message, busy = false) {
+    const status = document.getElementById('workspaceAutosaveStatus');
+    if (!status) return;
+    status.innerHTML = `<i class="fas ${busy ? 'fa-sync fa-spin' : 'fa-check-circle'}"></i> ${message}`;
+}
+
+function scheduleWorkspaceAutoSave(delay = 700) {
+    if (!analysisResult) return;
+    setWorkspaceAutoSaveStatus('Salvando...', true);
+    if (workspaceAutoSaveTimer) clearTimeout(workspaceAutoSaveTimer);
+    workspaceAutoSaveTimer = setTimeout(() => {
+        saveCurrentProject({ auto: true });
+        setWorkspaceAutoSaveStatus('Salvo automaticamente');
+    }, delay);
 }
 
 // ── Navegação Backlog / Board ─────────────────────────────────
@@ -5869,6 +5918,7 @@ function kanbanMoveTask(taskId, toCol, e) {
         }
     }
     jiraRenderBoard();
+    scheduleWorkspaceAutoSave();
     if (document.getElementById('jiraBacklogView')?.style.display !== 'none') jiraRenderBacklog();
 }
 
