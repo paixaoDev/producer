@@ -5224,7 +5224,7 @@ function jiraRenderBacklog() {
         return ALL_ROLES.indexOf(a.obj.area) - ALL_ROLES.indexOf(b.obj.area);
     });
 
-    allItems.forEach(({ obj, kr, ms }) => {
+    allItems.forEach(({ obj, kr, ms }, idx) => {
         const role  = obj.area;
         const color = areaColors[role] || '#6366f1';
         const tasks = kr.tasks || [];
@@ -5235,7 +5235,7 @@ function jiraRenderBacklog() {
         const pct = tasks.length > 0 ? Math.round(doneCount / tasks.length * 100) : 0;
 
         const sprintGroup = document.createElement('div');
-        sprintGroup.className = `jira-sprint-group collapsed${pct === 100 ? ' done' : ''}`;
+        sprintGroup.className = `jira-sprint-group${idx === 0 ? '' : ' collapsed'}${pct === 100 ? ' done' : ''}`;
 
         const sprintHdr = document.createElement('div');
         sprintHdr.className = 'jira-sprint-header';
