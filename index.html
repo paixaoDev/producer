@@ -59,6 +59,14 @@
                 <i class="fas fa-plus"></i>
             </button>
         </div>
+        <div class="project-create-menu" id="projectCreateMenu" hidden>
+            <button type="button" id="projectCreateNewBtn">
+                <i class="fas fa-plus"></i> Nova análise
+            </button>
+            <button type="button" id="projectImportJsonBtn">
+                <i class="fas fa-file-import"></i> Importar JSON
+            </button>
+        </div>
         <div class="sidebar-list" id="projectsList">
             <!-- Preenchido dinamicamente -->
         </div>
@@ -205,128 +213,121 @@
 
         <!-- Results Section -->
         <section class="results-section" id="resultsSection" style="display: none;">
-            <div class="results-header">
-                <h2><i class="fas fa-gamepad"></i> <span id="resultsProjectTitle">Roadmap do Projeto</span></h2>
-                <div class="results-actions">
-                    <button class="btn-save-project" id="saveProjectBtn" onclick="saveCurrentProject()">
-                        <i class="fas fa-save"></i> <span id="saveProjectBtnLabel">Salvar Projeto</span>
-                    </button>
-                    <button class="btn-secondary" id="importJsonBtn" onclick="document.getElementById('jsonImportInput').click()">
-                        <i class="fas fa-file-import"></i> Importar JSON
-                    </button>
-                    <button class="btn-secondary" id="exportBtn">
-                        <i class="fas fa-download"></i> Exportar
-                    </button>
-                    <button class="btn-primary" id="newAnalysisBtn">
-                        <i class="fas fa-plus"></i> Nova Análise
-                    </button>
-                </div>
-            </div>
-
-            <!-- 1. Project Overview — compact -->
-            <div class="project-overview" id="projectOverview">
-                <div class="overview-compact" id="overviewContent">
-                    <!-- Preenchido dinamicamente -->
-                </div>
-            </div>
-
-            <!-- 2. Roadmap — card central com toggle simples/detalhado -->
-            <div class="roadmap-card" id="roadmapCard">
-                <div class="roadmap-card-header">
-                    <div class="roadmap-card-title">
-                        <i class="fas fa-road"></i>
-                        <span>Roadmap</span>
+            <div class="product-workspace" id="productWorkspace">
+                <div class="workspace-topbar">
+                    <div class="workspace-brand">
+                        <i class="fas fa-gamepad"></i>
+                        <span>Producer</span>
                     </div>
-                    <div class="roadmap-card-controls">
-                        <!-- Configuração de equipe inline -->
-                        <div class="team-config-container" id="teamConfigPanel"></div>
-                        <!-- Toggle simples/detalhado -->
-                        <div class="timeline-toggle-group" id="timelineToggleGroup">
-                            <button class="timeline-toggle-btn" id="btnSimple" onclick="setTimelineMode('simple')">
-                                <i class="fas fa-bars"></i> Simples
+                    <div class="workspace-title-block">
+                        <span class="workspace-kicker">Roadmap</span>
+                        <h2 id="resultsProjectTitle">Roadmap do Projeto</h2>
+                    </div>
+                    <div class="results-actions workspace-actions">
+                        <span class="workspace-autosave-status" id="workspaceAutosaveStatus">
+                            <i class="fas fa-check-circle"></i> Salvamento automático
+                        </span>
+                    </div>
+                </div>
+
+                <div class="workspace-body">
+                    <main class="workspace-main">
+                        <div class="workspace-tabs" role="tablist" aria-label="Visões do roadmap">
+                            <button class="workspace-tab active" data-workspace-tab="timeline" onclick="setWorkspaceTab('timeline')" type="button">
+                                <i class="fas fa-chart-gantt"></i> Cronograma
                             </button>
-                            <button class="timeline-toggle-btn active" id="btnDetailed" onclick="setTimelineMode('detailed')">
-                                <i class="fas fa-layer-group"></i> Detalhado
+                            <button class="workspace-tab" data-workspace-tab="backlog" onclick="setWorkspaceTab('backlog')" type="button">
+                                <i class="fas fa-list"></i> Backlog
+                            </button>
+                            <button class="workspace-tab" data-workspace-tab="board" onclick="setWorkspaceTab('board')" type="button">
+                                <i class="fas fa-columns"></i> Board
                             </button>
                         </div>
-                    </div>
-                </div>
-                <div class="roadmap-card-body">
-                    <div class="timeline" id="timeline">
-                        <!-- Timeline será preenchida dinamicamente -->
-                    </div>
-                </div>
-            </div>
 
-            <!-- 3. Marcos do Projeto — cards colapsáveis -->
-            <div class="milestones-container" id="milestonesContainer">
-                <div class="milestones-header">
-                    <h3><i class="fas fa-flag-checkered"></i> Marcos do Projeto</h3>
-                    <span class="milestones-hint">Clique para expandir</span>
-                </div>
-                <div class="milestones-grid" id="milestonesGrid">
-                    <!-- Milestones serão preenchidos dinamicamente -->
-                </div>
-            </div>
+                        <section class="workspace-panel active" id="workspaceTimelinePanel" data-workspace-panel="timeline">
+                            <div class="roadmap-card" id="roadmapCard">
+                                <div class="roadmap-card-header">
+                                    <div class="roadmap-card-title">
+                                        <i class="fas fa-road"></i>
+                                        <span>Cronograma</span>
+                                    </div>
+                                    <div class="roadmap-card-controls">
+                                        <div class="timeline-toggle-group" id="timelineToggleGroup">
+                                            <button class="timeline-toggle-btn" id="btnSimple" onclick="setTimelineMode('simple')">
+                                                <i class="fas fa-bars"></i> Simples
+                                            </button>
+                                            <button class="timeline-toggle-btn active" id="btnDetailed" onclick="setTimelineMode('detailed')">
+                                                <i class="fas fa-layer-group"></i> Detalhado
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="roadmap-card-body">
+                                    <div class="timeline" id="timeline">
+                                        <!-- Timeline será preenchida dinamicamente -->
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
 
-            <!-- 4. Tarefas — Jira-style: Backlog + Board -->
-            <div class="jira-shell" id="jiraShell">
+                        <section class="workspace-panel" id="workspaceWorkPanel" data-workspace-panel="work">
+                            <div class="work-shell workspace-driven" id="workShell">
 
                 <!-- Linha 1: abas Backlog / Board -->
-                <div class="jira-tabs-bar">
-                    <button class="jira-tab active" id="jiraNavBacklog" onclick="jiraSetView('backlog')">
+                <div class="work-tabs-bar">
+                    <button class="work-tab active" id="workNavBacklog" onclick="workSetView('backlog')">
                         <i class="fas fa-list"></i> Backlog
                     </button>
-                    <button class="jira-tab" id="jiraNavBoard" onclick="jiraSetView('board')">
+                    <button class="work-tab" id="workNavBoard" onclick="workSetView('board')">
                         <i class="fas fa-columns"></i> Board
                     </button>
-                    <div class="jira-tabs-sep"></div>
+                    <div class="work-tabs-sep"></div>
                     <!-- Breadcrumb da sprint ativa no board (só visível na aba Board) -->
-                    <div class="jira-board-sprint-selector" id="jiraBoardSprintBar" style="display:none">
-                        <span class="jira-filter-label"><i class="fas fa-columns"></i></span>
-                        <span id="jiraBoardActiveSprintLabel" style="font-size:.8rem;color:var(--gray-600)">—</span>
-                        <button class="btn-xs btn-ghost" onclick="jiraSetView('backlog')" title="Voltar ao backlog">
+                    <div class="work-board-sprint-selector" id="workBoardSprintBar" style="display:none">
+                        <span class="work-filter-label"><i class="fas fa-columns"></i></span>
+                        <span id="workBoardActiveSprintLabel" style="font-size:.8rem;color:var(--gray-600)">—</span>
+                        <button class="btn-xs btn-ghost" onclick="workSetView('backlog')" title="Voltar ao backlog">
                             <i class="fas fa-arrow-left"></i> Backlog
                         </button>
                     </div>
                 </div>
 
                 <!-- Linha 2: avatares de cargo + filtros de marco -->
-                <div class="jira-roles-bar">
-                    <div class="jira-role-avatars" id="jiraRoleAvatars">
-                        <button class="jira-avatar active" data-role="programming" title="Programador" onclick="jiraToggleRole('programming')">
+                <div class="work-roles-bar">
+                    <div class="work-role-avatars" id="workRoleAvatars">
+                        <button class="work-avatar active" data-role="programming" title="Programador" onclick="workToggleRole('programming')">
                             <span class="avatar-circle avatar-prog">💻</span>
                         </button>
-                        <button class="jira-avatar active" data-role="art" title="Artista" onclick="jiraToggleRole('art')">
+                        <button class="work-avatar active" data-role="art" title="Artista" onclick="workToggleRole('art')">
                             <span class="avatar-circle avatar-art">🎨</span>
                         </button>
-                        <button class="jira-avatar active" data-role="design" title="Designer" onclick="jiraToggleRole('design')">
+                        <button class="work-avatar active" data-role="design" title="Designer" onclick="workToggleRole('design')">
                             <span class="avatar-circle avatar-design">📋</span>
                         </button>
-                        <button class="jira-avatar active" data-role="audio" title="Áudio" onclick="jiraToggleRole('audio')">
+                        <button class="work-avatar active" data-role="audio" title="Áudio" onclick="workToggleRole('audio')">
                             <span class="avatar-circle avatar-audio">🎵</span>
                         </button>
-                        <button class="jira-avatar active" data-role="qa" title="QA" onclick="jiraToggleRole('qa')">
+                        <button class="work-avatar active" data-role="qa" title="QA" onclick="workToggleRole('qa')">
                             <span class="avatar-circle avatar-qa">🧪</span>
                         </button>
                     </div>
                     <!-- Separador vertical -->
-                    <span class="jira-bar-divider"></span>
+                    <span class="work-bar-divider"></span>
                     <!-- Filtros de marco — populados por JS -->
-                    <div class="jira-milestone-filters" id="jiraMilestoneFiltersBar" style="display:none"></div>
+                    <div class="work-milestone-filters" id="workMilestoneFiltersBar" style="display:none"></div>
                 </div>
 
                 <!-- Conteúdo das abas -->
-                <div class="jira-main">
+                <div class="work-main">
 
                     <!-- BACKLOG VIEW -->
-                    <div id="jiraBacklogView">
-                        <div id="jiraBacklogSprints"></div>
+                    <div id="workBacklogView">
+                        <div id="workBacklogSprints"></div>
                         <div class="tasks-grid" id="tasksGrid" style="display:none"></div>
                     </div>
 
                     <!-- BOARD VIEW -->
-                    <div id="jiraBoardView" style="display:none">
+                    <div id="workBoardView" style="display:none">
                         <div class="kanban-board" id="kanbanBoard">
                             <div class="kanban-empty" id="kanbanEmpty">
                                 <i class="fas fa-columns" style="font-size:2rem;opacity:.3"></i>
@@ -370,19 +371,102 @@
                         </div>
                     </div>
 
-                </div><!-- /jira-main -->
-            </div><!-- /jira-shell -->
+                </div><!-- /work-main -->
+                            </div><!-- /work-shell -->
+                        </section>
+                    </main>
 
-            <!-- Resumo para Edital (colapsado por padrão) -->
-            <div class="edital-container" id="editalContainer">
-                <div class="edital-header-row">
-                    <h3><i class="fas fa-file-contract"></i> Resumo para Edital / Proposta</h3>
-                    <button class="btn-secondary btn-sm" onclick="exportEditalText()">
-                        <i class="fas fa-copy"></i> Copiar texto
-                    </button>
-                </div>
-                <div class="edital-content" id="editalContent">
-                    <!-- Texto do edital será gerado dinamicamente -->
+                    <aside class="workspace-side-rail" aria-label="Dados do projeto">
+                        <button class="workspace-rail-btn" data-workspace-drawer="overview" onclick="openWorkspaceDrawer('overview')" title="Resumo" type="button">
+                            <i class="fas fa-chart-pie"></i>
+                        </button>
+                        <button class="workspace-rail-btn" data-workspace-drawer="milestones" onclick="openWorkspaceDrawer('milestones')" title="Marcos" type="button">
+                            <i class="fas fa-flag-checkered"></i>
+                        </button>
+                        <button class="workspace-rail-btn" data-workspace-drawer="team" onclick="openWorkspaceDrawer('team')" title="Equipe" type="button">
+                            <i class="fas fa-users"></i>
+                        </button>
+                        <button class="workspace-rail-btn" data-workspace-drawer="edital" onclick="openWorkspaceDrawer('edital')" title="Edital" type="button">
+                            <i class="fas fa-file-contract"></i>
+                        </button>
+                        <button class="workspace-rail-btn" data-workspace-drawer="actions" onclick="openWorkspaceDrawer('actions')" title="Ações" type="button">
+                            <i class="fas fa-ellipsis-h"></i>
+                        </button>
+                    </aside>
+
+                    <aside class="workspace-drawer" id="workspaceDrawer" aria-label="Painel lateral">
+                        <div class="workspace-drawer-header">
+                            <div>
+                                <span class="workspace-drawer-kicker">Detalhes</span>
+                                <h3>Dados do projeto</h3>
+                            </div>
+                            <button class="workspace-drawer-close" onclick="closeWorkspaceDrawer()" title="Fechar painel" type="button">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+
+                        <div class="workspace-drawer-panel" data-drawer-panel="overview" hidden>
+                            <div class="project-overview" id="projectOverview">
+                                <div class="overview-compact" id="overviewContent">
+                                    <!-- Preenchido dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="workspace-drawer-panel" data-drawer-panel="milestones" hidden>
+                            <div class="milestones-container" id="milestonesContainer">
+                                <div class="milestones-header">
+                                    <h3><i class="fas fa-flag-checkered"></i> Marcos do Projeto</h3>
+                                    <span class="milestones-hint">Clique para expandir</span>
+                                </div>
+                                <div class="milestones-grid" id="milestonesGrid">
+                                    <!-- Milestones serão preenchidos dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="workspace-drawer-panel" data-drawer-panel="team" hidden>
+                            <div class="drawer-section-title">
+                                <i class="fas fa-users"></i>
+                                <span>Equipe</span>
+                            </div>
+                            <div class="team-config-container" id="teamConfigPanel"></div>
+                        </div>
+
+                        <div class="workspace-drawer-panel" data-drawer-panel="edital" hidden>
+                            <div class="edital-container" id="editalContainer">
+                                <div class="edital-header-row">
+                                    <h3><i class="fas fa-file-contract"></i> Resumo para Edital / Proposta</h3>
+                                    <button class="btn-secondary btn-sm" onclick="exportEditalText()">
+                                        <i class="fas fa-copy"></i> Copiar texto
+                                    </button>
+                                </div>
+                                <div class="edital-content" id="editalContent">
+                                    <!-- Texto do edital será gerado dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="workspace-drawer-panel" data-drawer-panel="actions" hidden>
+                            <div class="drawer-section-title">
+                                <i class="fas fa-ellipsis-h"></i>
+                                <span>Ações</span>
+                            </div>
+                            <div class="workspace-action-list">
+                                <button class="workspace-action-btn" id="exportBtn" type="button">
+                                    <i class="fas fa-download"></i>
+                                    <span>Exportar roadmap</span>
+                                </button>
+                                <button class="workspace-action-btn danger" id="newAnalysisBtn" type="button">
+                                    <i class="fas fa-plus"></i>
+                                    <span>Nova análise</span>
+                                </button>
+                            </div>
+                            <button class="btn-save-project workspace-hidden-save" id="saveProjectBtn" onclick="saveCurrentProject()" type="button">
+                                <i class="fas fa-save"></i> <span id="saveProjectBtnLabel">Salvar Projeto</span>
+                            </button>
+                        </div>
+                    </aside>
                 </div>
             </div>
         </section>

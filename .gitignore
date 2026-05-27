@@ -4,7 +4,9 @@ Thumbs.db
 
 # Agentes e gerados
 AGENTS.md
+docs/
 gerados/
+tests/
 
 # Dependências
 node_modules/

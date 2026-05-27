@@ -6,7 +6,7 @@
 // Estado da aplicação
 let currentFile = null;
 let analysisResult = null;
-let jiraMilestoneOutsideClickHandler = null;
+let workMilestoneOutsideClickHandler = null;
 
 // Configuração de equipe (sliders) — persiste entre re-renders
 let teamConfig = { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 };
@@ -1305,7 +1305,10 @@ function initializeEventListeners() {
     removeFile.addEventListener('click', clearFile);
     analyzeBtn.addEventListener('click', analyzeDocument);
     exportBtn.addEventListener('click', exportResults);
-    newAnalysisBtn.addEventListener('click', resetToUpload);
+    newAnalysisBtn.addEventListener('click', () => {
+        if (analysisResult) saveCurrentProject({ auto: true, notify: false });
+        resetToUpload();
+    });
 
     // Input de importação de JSON
     initJsonImport();
@@ -2957,6 +2960,7 @@ function fixTruncatedJSON(str) {
 // UI DE LOADING COM PROGRESSO DAS FASES
 // ============================================================
 function showLoadingScreen() {
+    document.body.classList.remove('results-workspace-mode');
     uploadSection.style.display = 'none';
     loadingSection.style.display = 'block';
     resultsSection.style.display = 'none';
@@ -2988,6 +2992,7 @@ function setLoadingPhase(phase, message) {
 // EXIBIÇÃO DE RESULTADOS — HIERARQUIA Objetivo > OKR > Sprint
 // ============================================================
 function showResults() {
+    document.body.classList.add('results-workspace-mode');
     uploadSection.style.display = 'none';
     loadingSection.style.display = 'none';
     resultsSection.style.display = 'block';
@@ -2995,6 +3000,7 @@ function showResults() {
     recomputeSchedule();   // calcula scheduledResult antes de renderizar
     populateResults();
     saveApplicationState();
+    if (!getActiveProjectId()) saveCurrentProject({ auto: true, notify: false });
     // Atualiza botão salvar para refletir se há projeto ativo
     if (typeof updateSaveBtn === 'function') updateSaveBtn();
 }
@@ -3020,6 +3026,7 @@ function onTeamConfigChange() {
     } catch (e) {
         console.error('Erro ao re-renderizar após mudança de equipe:', e);
     }
+    scheduleWorkspaceAutoSave();
 }
 
 /**
@@ -3065,7 +3072,7 @@ function populateResults() {
         populateMilestones();
         populateEditalSummary();
         populateHierarchicalTasks();
-        if (typeof jiraInit === 'function') jiraInit();
+        if (typeof workInit === 'function') workInit();
     } catch (error) {
         console.error('Erro ao popular resultados:', error);
         alert('Erro ao exibir os resultados.');
@@ -4080,6 +4087,7 @@ function exportResults() {
 // RESET E NAVEGAÇÃO
 // ============================================================
 function resetToUpload() {
+    document.body.classList.remove('results-workspace-mode');
     currentFile = null;
     analysisResult = null;
     clearFile();
@@ -4488,9 +4496,11 @@ function countTasks(analysis, taskProgress) {
 }
 
 // Salva o projeto atual (análise + equipe + scheduled)
-function saveCurrentProject() {
+function saveCurrentProject(options = {}) {
+    const notify = options?.notify !== false;
+    const auto = options?.auto === true;
     if (!analysisResult) {
-        showNotification('Nenhum roadmap para salvar.', 'error');
+        if (notify) showNotification('Nenhum roadmap para salvar.', 'error');
         return;
     }
 
@@ -4517,7 +4527,7 @@ function saveCurrentProject() {
         // Atualiza projeto existente
         projects[projectId].data = projectData;
         projects[projectId].savedAt = Date.now();
-        showNotification(`"${projects[projectId].name}" atualizado!`, 'success');
+        if (notify) showNotification(auto ? `"${projects[projectId].name}" salvo automaticamente.` : `"${projects[projectId].name}" atualizado!`, 'success');
     } else {
         // Cria novo projeto
         projectId = genProjectId();
@@ -4531,7 +4541,7 @@ function saveCurrentProject() {
             data: projectData
         };
         setActiveProjectId(projectId);
-        showNotification(`"${title}" salvo!`, 'success');
+        if (notify) showNotification(auto ? `"${title}" salvo automaticamente.` : `"${title}" salvo!`, 'success');
     }
 
     saveAllProjects(projects);
@@ -4618,7 +4628,7 @@ function captureTaskProgress() {
 }
 
 function captureBoardSelection() {
-    return { ...jiraBoardSelections };
+    return { ...workBoardSelections };
 }
 
 // Aplica o progresso de tarefas salvo restaurando no localStorage (loadTaskStates() vai buscar de lá)
@@ -4631,8 +4641,8 @@ function restoreTaskProgress(progress) {
 }
 
 function restoreBoardSelection(selection) {
-    jiraBoardSelections = selection ? { ...selection } : {};
-    jiraSaveBoardSelections();
+    workBoardSelections = selection ? { ...selection } : {};
+    workSaveBoardSelections();
 }
 
 // Gera uma chave estável para uma tarefa (não usada internamente, mas mantida para compatibilidade)
@@ -4744,27 +4754,49 @@ function toggleSidebar() {
 function closeSidebar() {
     const sidebar = document.getElementById('projectsSidebar');
     const overlay = document.getElementById('sidebarOverlay');
+    const createMenu = document.getElementById('projectCreateMenu');
     if (sidebar) sidebar.classList.remove('open');
     if (overlay) overlay.classList.remove('active');
+    if (createMenu) createMenu.hidden = true;
 }
 
-// Botão "Novo Projeto" na sidebar: limpa estado e vai para upload
+// Botão "+" na sidebar: abre menu de criação/importação
 document.addEventListener('DOMContentLoaded', () => {
     const newBtn = document.getElementById('newProjectBtn');
+    const createMenu = document.getElementById('projectCreateMenu');
+    const createNewBtn = document.getElementById('projectCreateNewBtn');
+    const importJsonBtn = document.getElementById('projectImportJsonBtn');
+    const startNewAnalysis = () => {
+        if (analysisResult && !confirm('Abrir novo projeto? O roadmap atual será salvo automaticamente antes de sair.')) return;
+        if (analysisResult) saveCurrentProject({ auto: true, notify: false });
+        setActiveProjectId(null);
+        analysisResult = null;
+        scheduledResult = null;
+        workBoardSelections = {};
+        workSaveBoardSelections();
+        Object.assign(teamConfig, { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 });
+        resetToUpload();
+        closeSidebar();
+        updateSaveBtn();
+    };
     if (newBtn) {
-        newBtn.addEventListener('click', () => {
-            if (analysisResult && !confirm('Abrir novo projeto? O roadmap atual não salvo será perdido.')) return;
-            setActiveProjectId(null);
-            analysisResult = null;
-            scheduledResult = null;
-            jiraBoardSelections = {};
-            jiraSaveBoardSelections();
-            Object.assign(teamConfig, { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 });
-            resetToUpload();
-            closeSidebar();
-            updateSaveBtn();
+        newBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if (createMenu) createMenu.hidden = !createMenu.hidden;
         });
     }
+    if (createNewBtn) createNewBtn.addEventListener('click', startNewAnalysis);
+    if (importJsonBtn) {
+        importJsonBtn.addEventListener('click', () => {
+            if (createMenu) createMenu.hidden = true;
+            document.getElementById('jsonImportInput')?.click();
+        });
+    }
+    document.addEventListener('click', (event) => {
+        if (!createMenu || createMenu.hidden) return;
+        if (event.target.closest('#projectCreateMenu') || event.target.closest('#newProjectBtn')) return;
+        createMenu.hidden = true;
+    });
 
     // Inicializa sidebar e badge ao entrar no app
     const origShowApp = window._origShowApp;
@@ -4798,6 +4830,7 @@ window.toggleSprintTask = function(checkbox) {
     if (!projects[activeId]) return;
     projects[activeId].data.taskProgress = captureTaskProgress();
     saveAllProjects(projects);
+    scheduleWorkspaceAutoSave();
 
     // Atualiza barra de progresso na sidebar se estiver aberta
     const sidebar = document.getElementById('projectsSidebar');
@@ -5023,16 +5056,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ============================================================
-// JIRA-STYLE VIEW — Backlog + Board
+// WORK-STYLE VIEW — Backlog + Board
 // ============================================================
 
-let jiraSelectedRoles = new Set(['programming', 'art', 'design', 'audio', 'qa']);
-let jiraSelectedMilestone = null; // null = todos; string = id do marco filtrado
+let workSelectedRoles = new Set(['programming', 'art', 'design', 'audio', 'qa']);
+let workSelectedMilestone = null; // null = todos; string = id do marco filtrado
 let backlogGroupMode = 'sprint'; // 'sprint' = agrupado por sprint | 'task' = agrupado por KR/área
 let kanbanDraggedTaskId = null;
 let kanbanDraggedFromCol = null;
 let kanbanTaskStates = {};
-let jiraBoardSelections = {};
+let workBoardSelections = {};
+let workspaceActiveTab = 'timeline';
+let workspaceActiveDrawer = null;
+let workspaceAutoSaveTimer = null;
 
 const ALL_ROLES = ['programming', 'art', 'design', 'audio', 'qa'];
 const ROLE_LABELS = { programming:'Programador', art:'Artista', design:'Designer', audio:'Áudio', qa:'QA' };
@@ -5042,9 +5078,9 @@ function kanbanStatesKey() {
     const id = getActiveProjectId();
     return id ? `kanban_states_${id}` : 'kanban_states_default';
 }
-function jiraBoardSelectionsKey() {
+function workBoardSelectionsKey() {
     const id = getActiveProjectId();
-    return id ? `jira_board_selection_${id}` : 'jira_board_selection_default';
+    return id ? `work_board_selection_${id}` : 'work_board_selection_default';
 }
 function kanbanLoadStates() {
     try { kanbanTaskStates = JSON.parse(localStorage.getItem(kanbanStatesKey()) || '{}'); }
@@ -5053,81 +5089,87 @@ function kanbanLoadStates() {
 function kanbanSaveStates() {
     try { localStorage.setItem(kanbanStatesKey(), JSON.stringify(kanbanTaskStates)); } catch {}
 }
-function jiraLoadBoardSelections() {
-    try { jiraBoardSelections = JSON.parse(localStorage.getItem(jiraBoardSelectionsKey()) || '{}'); }
-    catch { jiraBoardSelections = {}; }
+function workLoadBoardSelections() {
+    try { workBoardSelections = JSON.parse(localStorage.getItem(workBoardSelectionsKey()) || '{}'); }
+    catch { workBoardSelections = {}; }
 }
-function jiraSaveBoardSelections() {
-    try { localStorage.setItem(jiraBoardSelectionsKey(), JSON.stringify(jiraBoardSelections)); } catch {}
+function workSaveBoardSelections() {
+    try { localStorage.setItem(workBoardSelectionsKey(), JSON.stringify(workBoardSelections)); } catch {}
     try {
         const activeId = getActiveProjectId();
         if (!activeId) return;
         const projects = getAllProjects();
         if (!projects[activeId]?.data) return;
-        projects[activeId].data.boardSelection = { ...jiraBoardSelections };
+        projects[activeId].data.boardSelection = { ...workBoardSelections };
         saveAllProjects(projects);
     } catch {}
 }
-function jiraTaskKey(objId, krId, taskId) {
+function workTaskKey(objId, krId, taskId) {
     return `${objId}__${krId}__${taskId}`;
 }
-function jiraIsBoardTaskSelected(objId, krId, taskId) {
-    return !!jiraBoardSelections[jiraTaskKey(objId, krId, taskId)];
+function workIsBoardTaskSelected(objId, krId, taskId) {
+    return !!workBoardSelections[workTaskKey(objId, krId, taskId)];
 }
-function jiraTaskKanbanState(ref) {
+function workTaskKanbanState(ref) {
     if (!ref) return null;
     return kanbanTaskStates[ref.key] || kanbanTaskStates[ref.task.id] || null;
 }
-function jiraSetTaskDone(ref, done) {
+function workTaskDescription(task) {
+    const value = task?.description || task?.desc || task?.details || '';
+    return String(value || '').trim();
+}
+function workSetTaskDone(ref, done) {
     if (!ref) return;
     try { localStorage.setItem(`task_${ref.obj.id}_${ref.kr.id}_${ref.task.id}`, done ? 'true' : 'false'); } catch {}
 }
-function jiraGetBoardTaskRefs() {
+function workGetBoardTaskRefs() {
     const refs = [];
     const objList = (scheduledResult || analysisResult)?.objectives || [];
     objList.forEach(obj => {
         (obj.keyResults || []).forEach(kr => {
             (kr.tasks || []).forEach(task => {
-                const key = jiraTaskKey(obj.id, kr.id, task.id);
-                if (jiraBoardSelections[key]) refs.push({ key, obj, kr, task });
+                const key = workTaskKey(obj.id, kr.id, task.id);
+                if (workBoardSelections[key]) refs.push({ key, obj, kr, task });
             });
         });
     });
     return refs;
 }
-function jiraFindBoardTaskRef(taskKey) {
-    return jiraGetBoardTaskRefs().find(ref => ref.key === taskKey || ref.task.id === taskKey) || null;
+function workFindBoardTaskRef(taskKey) {
+    return workGetBoardTaskRefs().find(ref => ref.key === taskKey || ref.task.id === taskKey) || null;
 }
-function jiraSetBoardTask(objId, krId, taskId, selected) {
-    const key = jiraTaskKey(objId, krId, taskId);
-    if (selected) jiraBoardSelections[key] = true;
+function workSetBoardTask(objId, krId, taskId, selected) {
+    const key = workTaskKey(objId, krId, taskId);
+    if (selected) workBoardSelections[key] = true;
     else {
-        delete jiraBoardSelections[key];
+        delete workBoardSelections[key];
         delete kanbanTaskStates[key];
     }
 }
-function jiraSetBoardTasks(refs, selected) {
-    refs.forEach(ref => jiraSetBoardTask(ref.obj.id, ref.kr.id, ref.task.id, selected));
-    jiraSaveBoardSelections();
+function workSetBoardTasks(refs, selected) {
+    refs.forEach(ref => workSetBoardTask(ref.obj.id, ref.kr.id, ref.task.id, selected));
+    workSaveBoardSelections();
     kanbanSaveStates();
+    scheduleWorkspaceAutoSave();
 }
-function jiraToggleBoardTask(e, objId, krId, taskId) {
+function workToggleBoardTask(e, objId, krId, taskId) {
     if (e) e.stopPropagation();
-    jiraSetBoardTask(objId, krId, taskId, !jiraIsBoardTaskSelected(objId, krId, taskId));
-    jiraSaveBoardSelections();
-    jiraRefreshCurrentView();
+    workSetBoardTask(objId, krId, taskId, !workIsBoardTaskSelected(objId, krId, taskId));
+    workSaveBoardSelections();
+    scheduleWorkspaceAutoSave();
+    workRefreshCurrentView();
 }
-function jiraToggleBoardKr(e, objId, krId) {
+function workToggleBoardKr(e, objId, krId) {
     if (e) e.stopPropagation();
     const obj = ((scheduledResult || analysisResult)?.objectives || []).find(o => o.id === objId);
     const kr = obj?.keyResults?.find(k => k.id === krId);
     if (!obj || !kr) return;
     const refs = (kr.tasks || []).map(task => ({ obj, kr, task }));
-    const allSelected = refs.length > 0 && refs.every(ref => jiraIsBoardTaskSelected(obj.id, kr.id, ref.task.id));
-    jiraSetBoardTasks(refs, !allSelected);
-    jiraRefreshCurrentView();
+    const allSelected = refs.length > 0 && refs.every(ref => workIsBoardTaskSelected(obj.id, kr.id, ref.task.id));
+    workSetBoardTasks(refs, !allSelected);
+    workRefreshCurrentView();
 }
-function jiraToggleBoardSprint(e) {
+function workToggleBoardSprint(e) {
     if (e) e.stopPropagation();
     const section = e?.currentTarget?.closest('.backlog-sprint-section');
     const taskRows = [...(section?.querySelectorAll('[data-board-task-key]') || [])];
@@ -5138,89 +5180,147 @@ function jiraToggleBoardSprint(e) {
         const task = kr?.tasks?.find(t => t.id === taskId);
         return obj && kr && task ? { obj, kr, task } : null;
     }).filter(Boolean);
-    const allSelected = refs.length > 0 && refs.every(ref => jiraIsBoardTaskSelected(ref.obj.id, ref.kr.id, ref.task.id));
-    jiraSetBoardTasks(refs, !allSelected);
-    jiraRefreshCurrentView();
+    const allSelected = refs.length > 0 && refs.every(ref => workIsBoardTaskSelected(ref.obj.id, ref.kr.id, ref.task.id));
+    workSetBoardTasks(refs, !allSelected);
+    workRefreshCurrentView();
 }
 
 // ── Init ──────────────────────────────────────────────────────
-function jiraInit() {
+function workInit() {
     if (!analysisResult) return;
     kanbanLoadStates();
-    jiraLoadBoardSelections();
-    jiraSelectedRoles = new Set(ALL_ROLES);
-    jiraSelectedMilestone = null;
+    workLoadBoardSelections();
+    workSelectedRoles = new Set(ALL_ROLES);
+    workSelectedMilestone = null;
     backlogGroupMode = 'sprint';
-    jiraUpdateAvatarUI();
-    jiraSetView('backlog');
+    workUpdateAvatarUI();
+    workSetView('backlog');
+    setWorkspaceTab('timeline');
+}
+
+// ── Workspace principal ───────────────────────────────────────
+function syncWorkspaceTab(tab) {
+    workspaceActiveTab = tab;
+    document.querySelectorAll('[data-workspace-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.workspaceTab === tab);
+    });
+    document.querySelectorAll('[data-workspace-panel]').forEach(panel => {
+        const target = panel.dataset.workspacePanel;
+        panel.classList.toggle('active', target === tab || (target === 'work' && (tab === 'backlog' || tab === 'board')));
+    });
+}
+
+function setWorkspaceTab(tab) {
+    syncWorkspaceTab(tab);
+    if (tab === 'backlog') workSetView('backlog');
+    if (tab === 'board') workSetView('board');
+}
+
+function openWorkspaceDrawer(panel) {
+    workspaceActiveDrawer = panel;
+    const drawer = document.getElementById('workspaceDrawer');
+    if (!drawer) return;
+    document.querySelectorAll('[data-drawer-panel]').forEach(el => {
+        el.hidden = el.dataset.drawerPanel !== panel;
+    });
+    document.querySelectorAll('[data-workspace-drawer]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.workspaceDrawer === panel);
+    });
+    drawer.classList.add('open');
+}
+
+function closeWorkspaceDrawer() {
+    workspaceActiveDrawer = null;
+    document.getElementById('workspaceDrawer')?.classList.remove('open');
+    document.querySelectorAll('[data-workspace-drawer]').forEach(btn => btn.classList.remove('active'));
+}
+
+function setWorkspaceAutoSaveStatus(message, busy = false) {
+    const status = document.getElementById('workspaceAutosaveStatus');
+    if (!status) return;
+    status.innerHTML = `<i class="fas ${busy ? 'fa-sync fa-spin' : 'fa-check-circle'}"></i> ${message}`;
+}
+
+function scheduleWorkspaceAutoSave(delay = 700) {
+    if (!analysisResult) return;
+    setWorkspaceAutoSaveStatus('Salvando...', true);
+    if (workspaceAutoSaveTimer) clearTimeout(workspaceAutoSaveTimer);
+    workspaceAutoSaveTimer = setTimeout(() => {
+        saveCurrentProject({ auto: true });
+        setWorkspaceAutoSaveStatus('Salvo automaticamente');
+    }, delay);
 }
 
 // ── Navegação Backlog / Board ─────────────────────────────────
-function jiraSetView(view) {
-    const backlogView = document.getElementById('jiraBacklogView');
-    const boardView   = document.getElementById('jiraBoardView');
-    const navBacklog  = document.getElementById('jiraNavBacklog');
-    const navBoard    = document.getElementById('jiraNavBoard');
-    const sprintBar   = document.getElementById('jiraBoardSprintBar');
+function workSetView(view) {
+    const backlogView = document.getElementById('workBacklogView');
+    const boardView   = document.getElementById('workBoardView');
+    const navBacklog  = document.getElementById('workNavBacklog');
+    const navBoard    = document.getElementById('workNavBoard');
+    const sprintBar   = document.getElementById('workBoardSprintBar');
+    const tabsBar     = document.querySelector('.work-tabs-bar');
     if (!backlogView || !boardView) return;
 
-    const msFiltersBar = document.getElementById('jiraMilestoneFiltersBar');
-    const barDivider   = document.querySelector('.jira-bar-divider');
+    const msFiltersBar = document.getElementById('workMilestoneFiltersBar');
+    const barDivider   = document.querySelector('.work-bar-divider');
+    syncWorkspaceTab(view);
     if (view === 'backlog') {
         backlogView.style.display = 'block';
         boardView.style.display   = 'none';
         navBacklog.classList.add('active');
         navBoard.classList.remove('active');
         if (sprintBar) sprintBar.style.display = 'none';
-        jiraRenderBacklog(); // também popula filtros de marco
+        if (tabsBar?.closest('.workspace-driven')) tabsBar.style.display = 'none';
+        workRenderBacklog(); // também popula filtros de marco
     } else {
         backlogView.style.display = 'none';
         boardView.style.display   = 'block';
         navBoard.classList.add('active');
         navBacklog.classList.remove('active');
+        if (tabsBar?.closest('.workspace-driven')) tabsBar.style.display = 'flex';
         if (sprintBar) sprintBar.style.display = 'flex';
         if (msFiltersBar) msFiltersBar.style.display = 'none';
         if (barDivider)   barDivider.style.display   = 'none';
-        jiraRenderBoard();
+        workRenderBoard();
     }
 }
 
 // ── Cargo (multiselect) ───────────────────────────────────────
-function jiraToggleRole(role) {
-    if (jiraSelectedRoles.has(role)) {
-        if (jiraSelectedRoles.size === 1) return; // mínimo 1
-        jiraSelectedRoles.delete(role);
+function workToggleRole(role) {
+    if (workSelectedRoles.has(role)) {
+        if (workSelectedRoles.size === 1) return; // mínimo 1
+        workSelectedRoles.delete(role);
     } else {
-        jiraSelectedRoles.add(role);
+        workSelectedRoles.add(role);
     }
-    jiraUpdateAvatarUI();
-    jiraRefreshCurrentView();
+    workUpdateAvatarUI();
+    workRefreshCurrentView();
 }
 
-function jiraSelectAllRoles() {
-    jiraSelectedRoles = new Set(ALL_ROLES);
-    jiraUpdateAvatarUI();
-    jiraRefreshCurrentView();
+function workSelectAllRoles() {
+    workSelectedRoles = new Set(ALL_ROLES);
+    workUpdateAvatarUI();
+    workRefreshCurrentView();
 }
 
-function jiraClearRoles() {
-    jiraSelectedRoles = new Set([ALL_ROLES[0]]);
-    jiraUpdateAvatarUI();
-    jiraRefreshCurrentView();
+function workClearRoles() {
+    workSelectedRoles = new Set([ALL_ROLES[0]]);
+    workUpdateAvatarUI();
+    workRefreshCurrentView();
 }
 
-function jiraUpdateAvatarUI() {
-    document.querySelectorAll('.jira-avatar').forEach(a => {
-        a.classList.toggle('active', jiraSelectedRoles.has(a.dataset.role));
+function workUpdateAvatarUI() {
+    document.querySelectorAll('.work-avatar').forEach(a => {
+        a.classList.toggle('active', workSelectedRoles.has(a.dataset.role));
     });
-    const allSelected = jiraSelectedRoles.size === ALL_ROLES.length;
-    const clearBtn = document.getElementById('jiraRolesClearBtn');
-    const allBtn   = document.getElementById('jiraRolesAllBtn');
+    const allSelected = workSelectedRoles.size === ALL_ROLES.length;
+    const clearBtn = document.getElementById('workRolesClearBtn');
+    const allBtn   = document.getElementById('workRolesAllBtn');
     if (clearBtn) clearBtn.style.display = allSelected ? 'none' : '';
     if (allBtn)   allBtn.style.display   = allSelected ? '' : 'none';
 }
 
-function jiraSortMilestonesForFilter(milestones) {
+function workSortMilestonesForFilter(milestones) {
     return (milestones || []).slice().sort((a, b) => {
         const monthA = Number(a.month) || 0;
         const monthB = Number(b.month) || 0;
@@ -5229,7 +5329,7 @@ function jiraSortMilestonesForFilter(milestones) {
     });
 }
 
-function jiraNormalizeMilestoneText(value) {
+function workNormalizeMilestoneText(value) {
     return String(value || '')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -5237,9 +5337,9 @@ function jiraNormalizeMilestoneText(value) {
         .trim();
 }
 
-function jiraFilterMilestoneOptions(milestones, query) {
-    const sorted = jiraSortMilestonesForFilter(milestones);
-    const normalizedQuery = jiraNormalizeMilestoneText(query);
+function workFilterMilestoneOptions(milestones, query) {
+    const sorted = workSortMilestonesForFilter(milestones);
+    const normalizedQuery = workNormalizeMilestoneText(query);
     if (!normalizedQuery) return sorted;
 
     return sorted.filter(ms => {
@@ -5251,44 +5351,44 @@ function jiraFilterMilestoneOptions(milestones, query) {
             month ? `mes ${month}` : '',
             month ? `mês ${month}` : '',
             month ? `m${month}` : '',
-        ].map(jiraNormalizeMilestoneText).join(' ');
+        ].map(workNormalizeMilestoneText).join(' ');
 
         return corpus.includes(normalizedQuery);
     });
 }
 
-function jiraGetMilestoneQuickLabel(milestone) {
+function workGetMilestoneQuickLabel(milestone) {
     return milestone?.title ? `Primeiro marco: ${milestone.title}` : 'Primeiro marco';
 }
 
-function jiraGetMilestoneSelectedLabel(milestone) {
+function workGetMilestoneSelectedLabel(milestone) {
     if (!milestone) return '';
     const month = Number(milestone.month) || '';
     return month ? `${milestone.title} · Mês ${month}` : milestone.title;
 }
 
-function jiraGetMilestoneForObjective(obj, milestones) {
-    const sorted = jiraSortMilestonesForFilter(milestones);
+function workGetMilestoneForObjective(obj, milestones) {
+    const sorted = workSortMilestonesForFilter(milestones);
     if (sorted.length === 0) return null;
 
     const start = Number(obj?.startMonth || obj?.timeline?.startMonth) || 1;
     return sorted.find(ms => Number(ms.month) >= start) || sorted[sorted.length - 1];
 }
 
-function jiraGetMilestoneTaskLabel(milestone) {
+function workGetMilestoneTaskLabel(milestone) {
     return milestone?.title || milestone?.id || 'Marco';
 }
 
-function jiraGetSprintGroupLabel(sprintNumber) {
+function workGetSprintGroupLabel(sprintNumber) {
     return Number(sprintNumber) > 0 ? `Sprint ${sprintNumber}` : 'Selecionar tudo';
 }
 
-function jiraBuildBacklogItemsForMilestoneFilter(objectives, milestones, selectedRoles, selectedMilestone) {
+function workBuildBacklogItemsForMilestoneFilter(objectives, milestones, selectedRoles, selectedMilestone) {
     const items = [];
     (objectives || []).forEach(obj => {
         if (selectedRoles && !selectedRoles.has(obj.area)) return;
 
-        const milestone = jiraGetMilestoneForObjective(obj, milestones);
+        const milestone = workGetMilestoneForObjective(obj, milestones);
         if (!milestone) return;
         if (selectedMilestone && milestone.id !== selectedMilestone) return;
 
@@ -5300,33 +5400,33 @@ function jiraBuildBacklogItemsForMilestoneFilter(objectives, milestones, selecte
 }
 
 // ── Filtro de marco ───────────────────────────────────────────
-function jiraSetMilestoneFilter(msId) {
-    jiraSelectedMilestone = (jiraSelectedMilestone === msId) ? null : msId;
-    jiraUpdateMilestoneFilterUI();
-    jiraRenderBacklog();
+function workSetMilestoneFilter(msId) {
+    workSelectedMilestone = (workSelectedMilestone === msId) ? null : msId;
+    workUpdateMilestoneFilterUI();
+    workRenderBacklog();
 }
 
-function jiraUpdateMilestoneFilterUI() {
-    document.querySelectorAll('.jira-ms-chip').forEach(chip => {
-        chip.classList.toggle('active', chip.dataset.msId === jiraSelectedMilestone);
+function workUpdateMilestoneFilterUI() {
+    document.querySelectorAll('.work-ms-chip').forEach(chip => {
+        chip.classList.toggle('active', chip.dataset.msId === workSelectedMilestone);
     });
-    const milestones = jiraSortMilestonesForFilter(analysisResult?.milestones || []);
-    const selected = milestones.find(ms => ms.id === jiraSelectedMilestone);
-    const selectedPill = document.getElementById('jiraMilestoneSelectedPill');
+    const milestones = workSortMilestonesForFilter(analysisResult?.milestones || []);
+    const selected = milestones.find(ms => ms.id === workSelectedMilestone);
+    const selectedPill = document.getElementById('workMilestoneSelectedPill');
     if (selectedPill) {
         selectedPill.style.display = selected ? '' : 'none';
-        const label = selectedPill.querySelector('.jira-ms-selected-label');
-        if (label) label.textContent = jiraGetMilestoneSelectedLabel(selected);
+        const label = selectedPill.querySelector('.work-ms-selected-label');
+        if (label) label.textContent = workGetMilestoneSelectedLabel(selected);
     }
 }
 
-function jiraRenderMilestoneFilters() {
-    const bar     = document.getElementById('jiraMilestoneFiltersBar');
-    const divider = document.querySelector('.jira-bar-divider');
+function workRenderMilestoneFilters() {
+    const bar     = document.getElementById('workMilestoneFiltersBar');
+    const divider = document.querySelector('.work-bar-divider');
     if (!bar || !analysisResult) return;
     bar.innerHTML = '';
 
-    const milestones = jiraSortMilestonesForFilter(analysisResult.milestones || []);
+    const milestones = workSortMilestonesForFilter(analysisResult.milestones || []);
     if (milestones.length === 0) {
         bar.style.display = 'none';
         if (divider) divider.style.display = 'none';
@@ -5340,26 +5440,26 @@ function jiraRenderMilestoneFilters() {
     // Quick filter — primeiro marco
     const firstMs  = milestones[0];
     const quickBtn = document.createElement('button');
-    quickBtn.className = 'jira-ms-chip quick';
+    quickBtn.className = 'work-ms-chip quick';
     quickBtn.dataset.msId = firstMs.id;
     quickBtn.title = `Filtrar: ${firstMs.title}`;
-    quickBtn.innerHTML = `<i class="fas fa-bolt"></i> ${jiraGetMilestoneQuickLabel(firstMs)}`;
-    quickBtn.onclick = () => jiraSetMilestoneFilter(firstMs.id);
+    quickBtn.innerHTML = `<i class="fas fa-bolt"></i> ${workGetMilestoneQuickLabel(firstMs)}`;
+    quickBtn.onclick = () => workSetMilestoneFilter(firstMs.id);
     bar.appendChild(quickBtn);
 
     const sep = document.createElement('span');
-    sep.className = 'jira-chip-sep';
+    sep.className = 'work-chip-sep';
     bar.appendChild(sep);
 
     const searchWrap = document.createElement('div');
-    searchWrap.className = 'jira-ms-search';
+    searchWrap.className = 'work-ms-search';
     searchWrap.innerHTML = `
-        <i class="fas fa-search jira-ms-search-icon"></i>
-        <input type="search" class="jira-ms-search-input" placeholder="Filtrar por marco" aria-label="Filtrar por marco">
-        <div class="jira-ms-suggestions" role="listbox" hidden></div>
+        <i class="fas fa-search work-ms-search-icon"></i>
+        <input type="search" class="work-ms-search-input" placeholder="Filtrar por marco" aria-label="Filtrar por marco">
+        <div class="work-ms-suggestions" role="listbox" hidden></div>
     `;
-    const input = searchWrap.querySelector('.jira-ms-search-input');
-    const suggestions = searchWrap.querySelector('.jira-ms-suggestions');
+    const input = searchWrap.querySelector('.work-ms-search-input');
+    const suggestions = searchWrap.querySelector('.work-ms-suggestions');
 
     function hideSuggestions() {
         suggestions.hidden = true;
@@ -5367,17 +5467,17 @@ function jiraRenderMilestoneFilters() {
     }
 
     function selectMilestone(ms) {
-        jiraSetMilestoneFilter(ms.id);
+        workSetMilestoneFilter(ms.id);
         input.value = '';
         hideSuggestions();
     }
 
     function renderSuggestions() {
-        const matches = jiraFilterMilestoneOptions(milestones, input.value).slice(0, 8);
+        const matches = workFilterMilestoneOptions(milestones, input.value).slice(0, 8);
         suggestions.innerHTML = '';
         if (matches.length === 0) {
             const empty = document.createElement('div');
-            empty.className = 'jira-ms-suggestion empty';
+            empty.className = 'work-ms-suggestion empty';
             empty.textContent = 'Nenhum marco encontrado';
             suggestions.appendChild(empty);
             suggestions.hidden = false;
@@ -5387,13 +5487,13 @@ function jiraRenderMilestoneFilters() {
         matches.forEach(ms => {
             const option = document.createElement('button');
             option.type = 'button';
-            option.className = 'jira-ms-suggestion';
+            option.className = 'work-ms-suggestion';
             option.dataset.msId = ms.id;
             option.innerHTML = `
-                <span class="jira-ms-suggestion-icon">${typeIcons[ms.type] || '📍'}</span>
-                <span class="jira-ms-suggestion-main">
-                    <span class="jira-ms-suggestion-title">${ms.title}</span>
-                    <span class="jira-ms-suggestion-meta">Mês ${ms.month || '—'} · ${ms.type || ms.id}</span>
+                <span class="work-ms-suggestion-icon">${typeIcons[ms.type] || '📍'}</span>
+                <span class="work-ms-suggestion-main">
+                    <span class="work-ms-suggestion-title">${ms.title}</span>
+                    <span class="work-ms-suggestion-meta">Mês ${ms.month || '—'} · ${ms.type || ms.id}</span>
                 </span>
             `;
             option.addEventListener('mousedown', e => e.preventDefault());
@@ -5411,7 +5511,7 @@ function jiraRenderMilestoneFilters() {
             input.blur();
         }
         if (e.key === 'Enter') {
-            const firstMatch = jiraFilterMilestoneOptions(milestones, input.value)[0];
+            const firstMatch = workFilterMilestoneOptions(milestones, input.value)[0];
             if (firstMatch) {
                 e.preventDefault();
                 selectMilestone(firstMatch);
@@ -5422,48 +5522,48 @@ function jiraRenderMilestoneFilters() {
 
     const selectedPill = document.createElement('button');
     selectedPill.type = 'button';
-    selectedPill.id = 'jiraMilestoneSelectedPill';
-    selectedPill.className = 'jira-ms-selected';
+    selectedPill.id = 'workMilestoneSelectedPill';
+    selectedPill.className = 'work-ms-selected';
     selectedPill.innerHTML = `
         <i class="fas fa-flag"></i>
-        <span class="jira-ms-selected-label"></span>
+        <span class="work-ms-selected-label"></span>
         <i class="fas fa-times"></i>
     `;
     selectedPill.title = 'Limpar filtro de marco';
-    selectedPill.onclick = () => jiraSetMilestoneFilter(jiraSelectedMilestone);
+    selectedPill.onclick = () => workSetMilestoneFilter(workSelectedMilestone);
     bar.appendChild(selectedPill);
 
-    if (jiraMilestoneOutsideClickHandler) {
-        document.removeEventListener('mousedown', jiraMilestoneOutsideClickHandler);
+    if (workMilestoneOutsideClickHandler) {
+        document.removeEventListener('mousedown', workMilestoneOutsideClickHandler);
     }
-    jiraMilestoneOutsideClickHandler = event => {
+    workMilestoneOutsideClickHandler = event => {
         if (!bar.contains(event.target)) hideSuggestions();
     };
-    document.addEventListener('mousedown', jiraMilestoneOutsideClickHandler);
+    document.addEventListener('mousedown', workMilestoneOutsideClickHandler);
 
-    jiraUpdateMilestoneFilterUI();
+    workUpdateMilestoneFilterUI();
 }
 
-function jiraRefreshCurrentView() {
-    const boardVisible = document.getElementById('jiraBoardView')?.style.display !== 'none';
+function workRefreshCurrentView() {
+    const boardVisible = document.getElementById('workBoardView')?.style.display !== 'none';
     if (boardVisible) {
-        jiraRenderBoard();
+        workRenderBoard();
     } else {
-        jiraRenderBacklog();
+        workRenderBacklog();
     }
 }
 
 // ── BACKLOG ───────────────────────────────────────────────────
-function jiraSetGroupMode(mode) {
+function workSetGroupMode(mode) {
     backlogGroupMode = mode;
     document.querySelectorAll('.backlog-group-toggle button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.mode === mode);
     });
-    jiraRenderBacklog();
+    workRenderBacklog();
 }
 
-function jiraRenderBacklog() {
-    const container = document.getElementById('jiraBacklogSprints');
+function workRenderBacklog() {
+    const container = document.getElementById('workBacklogSprints');
     if (!container || !analysisResult) return;
     container.innerHTML = '';
 
@@ -5471,16 +5571,16 @@ function jiraRenderBacklog() {
     const toggleBar = document.createElement('div');
     toggleBar.className = 'backlog-group-toggle';
     toggleBar.innerHTML = `
-        <button data-mode="sprint" class="${backlogGroupMode === 'sprint' ? 'active' : ''}" onclick="jiraSetGroupMode('sprint')">
+        <button data-mode="sprint" class="${backlogGroupMode === 'sprint' ? 'active' : ''}" onclick="workSetGroupMode('sprint')">
             <i class="fas fa-layer-group"></i> Por Sprint
         </button>
-        <button data-mode="task" class="${backlogGroupMode === 'task' ? 'active' : ''}" onclick="jiraSetGroupMode('task')">
+        <button data-mode="task" class="${backlogGroupMode === 'task' ? 'active' : ''}" onclick="workSetGroupMode('task')">
             <i class="fas fa-tasks"></i> Por Tarefa
         </button>
     `;
     container.appendChild(toggleBar);
 
-    jiraRenderMilestoneFilters();
+    workRenderMilestoneFilters();
 
     const objList    = (scheduledResult || analysisResult).objectives || [];
     const milestones = (analysisResult.milestones || []).slice().sort((a,b) => a.month - b.month);
@@ -5488,7 +5588,7 @@ function jiraRenderBacklog() {
     const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
 
     // Coleta sprints planas
-    const allItems = jiraBuildBacklogItemsForMilestoneFilter(objList, milestones, jiraSelectedRoles, jiraSelectedMilestone);
+    const allItems = workBuildBacklogItemsForMilestoneFilter(objList, milestones, workSelectedRoles, workSelectedMilestone);
 
     if (allItems.length === 0) {
         const empty = document.createElement('div');
@@ -5502,7 +5602,7 @@ function jiraRenderBacklog() {
         const tasks = kr.tasks || [];
         if (!tasks.length) return 0;
         const done = tasks.filter(t => {
-            if (jiraTaskKanbanState({ key: jiraTaskKey(obj.id, kr.id, t.id), task: t }) === 'done') return true;
+            if (workTaskKanbanState({ key: workTaskKey(obj.id, kr.id, t.id), task: t }) === 'done') return true;
             try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; }
         }).length;
         return Math.round(done / tasks.length * 100);
@@ -5514,72 +5614,76 @@ function jiraRenderBacklog() {
         const color = areaColors[role] || '#6366f1';
         const tasks = kr.tasks || [];
         const doneCount = tasks.filter(t => {
-            if (jiraTaskKanbanState({ key: jiraTaskKey(obj.id, kr.id, t.id), task: t }) === 'done') return true;
+            if (workTaskKanbanState({ key: workTaskKey(obj.id, kr.id, t.id), task: t }) === 'done') return true;
             try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; }
         }).length;
         const pct = tasks.length > 0 ? Math.round(doneCount / tasks.length * 100) : 0;
-        const selectedCount = tasks.filter(t => jiraIsBoardTaskSelected(obj.id, kr.id, t.id)).length;
+        const selectedCount = tasks.filter(t => workIsBoardTaskSelected(obj.id, kr.id, t.id)).length;
         const allSelected = tasks.length > 0 && selectedCount === tasks.length;
         const someSelected = selectedCount > 0 && !allSelected;
 
         const sprintGroup = document.createElement('div');
-        sprintGroup.className = `jira-sprint-group${idx === 0 ? '' : ' collapsed'}${pct === 100 ? ' done' : ''}${selectedCount > 0 ? ' board-active' : ''}`;
+        sprintGroup.className = `work-sprint-group${idx === 0 ? '' : ' collapsed'}${pct === 100 ? ' done' : ''}${selectedCount > 0 ? ' board-active' : ''}`;
 
         const sprintHdr = document.createElement('div');
-        sprintHdr.className = 'jira-sprint-header';
+        sprintHdr.className = 'work-sprint-header';
         sprintHdr.innerHTML = `
-            <button class="jira-board-toggle ${allSelected ? 'checked' : ''} ${someSelected ? 'mixed' : ''}"
-                    onclick="jiraToggleBoardKr(event,'${obj.id}','${kr.id}')"
+            <button class="work-board-toggle ${allSelected ? 'checked' : ''} ${someSelected ? 'mixed' : ''}"
+                    onclick="workToggleBoardKr(event,'${obj.id}','${kr.id}')"
                     title="${allSelected ? 'Remover tarefas do board' : 'Adicionar tarefas ao board'}">
                 <i class="fas ${allSelected ? 'fa-check' : someSelected ? 'fa-minus' : 'fa-plus'}"></i>
             </button>
-            <i class="fas fa-chevron-down jira-sprint-chevron"></i>
+            <i class="fas fa-chevron-down work-sprint-chevron"></i>
             <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
-            ${extraLabel ? `<span class="jira-sprint-num-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${extraLabel}</span>` : ''}
-            <span class="jira-sprint-name" style="font-weight:500;font-size:.84rem">${kr.title}</span>
+            ${extraLabel ? `<span class="work-sprint-num-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${extraLabel}</span>` : ''}
+            <span class="work-sprint-name" style="font-weight:500;font-size:.84rem">${kr.title}</span>
             <span class="sprint-milestone-tag" title="${ms.title}" data-ms-id="${ms.id}"
-                  onclick="jiraSetMilestoneFilter('${ms.id}');event.stopPropagation()">
-                ${typeIcons[ms.type]||'📍'} ${jiraGetMilestoneTaskLabel(ms)}
+                  onclick="workSetMilestoneFilter('${ms.id}');event.stopPropagation()">
+                ${typeIcons[ms.type]||'📍'} ${workGetMilestoneTaskLabel(ms)}
             </span>
-            <span class="jira-sprint-meta">
-                <span class="jira-board-selected-count">${selectedCount} no board</span>
-                <span class="jira-sprint-count">${doneCount}/${tasks.length}</span>
+            <span class="work-sprint-meta">
+                <span class="work-board-selected-count">${selectedCount} no board</span>
+                <span class="work-sprint-count">${doneCount}/${tasks.length}</span>
                 ${pct === 100 ? '<span style="color:var(--success-color);font-size:.7rem;font-weight:600">✓</span>' : ''}
             </span>
         `;
         sprintHdr.onclick = (e) => {
-            if (e.target.closest('.jira-board-toggle') || e.target.closest('.sprint-milestone-tag')) return;
+            if (e.target.closest('.work-board-toggle') || e.target.closest('.sprint-milestone-tag')) return;
             sprintGroup.classList.toggle('collapsed');
         };
         sprintGroup.appendChild(sprintHdr);
 
         const taskList = document.createElement('div');
-        taskList.className = 'jira-sprint-body';
+        taskList.className = 'work-sprint-body';
         tasks.forEach((t, ti) => {
-            const taskKey = jiraTaskKey(obj.id, kr.id, t.id);
-            const ks = jiraTaskKanbanState({ key: taskKey, task: t });
+            const taskKey = workTaskKey(obj.id, kr.id, t.id);
+            const ks = workTaskKanbanState({ key: taskKey, task: t });
             const lk = `task_${obj.id}_${kr.id}_${t.id}`;
             const isDone  = ks === 'done' || (() => { try { return localStorage.getItem(lk) === 'true'; } catch { return false; } })();
             const isDoing = ks === 'doing';
-            const isSelected = jiraIsBoardTaskSelected(obj.id, kr.id, t.id);
-            const sCls = isDone ? 'jira-task-status-done' : isDoing ? 'jira-task-status-doing' : 'jira-task-status-todo';
+            const isSelected = workIsBoardTaskSelected(obj.id, kr.id, t.id);
+            const sCls = isDone ? 'work-task-status-done' : isDoing ? 'work-task-status-doing' : 'work-task-status-todo';
+            const description = workTaskDescription(t);
             const row = document.createElement('div');
-            row.className = `jira-sprint-task-row ${sCls}${isSelected ? ' board-selected' : ''}`;
+            row.className = `work-sprint-task-row ${sCls}${isSelected ? ' board-selected' : ''}`;
             row.dataset.boardTaskKey = taskKey;
             row.dataset.obj = obj.id;
             row.dataset.kr = kr.id;
             row.dataset.task = t.id;
             row.innerHTML = `
-                <button class="jira-board-toggle task ${isSelected ? 'checked' : ''}"
-                        onclick="jiraToggleBoardTask(event,'${obj.id}','${kr.id}','${t.id}')"
+                <button class="work-board-toggle task ${isSelected ? 'checked' : ''}"
+                        onclick="workToggleBoardTask(event,'${obj.id}','${kr.id}','${t.id}')"
                         title="${isSelected ? 'Remover do board' : 'Adicionar ao board'}">
                     <i class="fas ${isSelected ? 'fa-check' : 'fa-plus'}"></i>
                 </button>
-                <div class="jira-task-status-dot"></div>
-                <span class="jira-task-id" style="color:${color}">${role.substring(0,3).toUpperCase()}-${ti+1}</span>
-                <span class="jira-task-title ${isDone?'done-title':''}">${t.title}</span>
-                <span class="jira-task-prio priority-${t.priority}">${t.priority}</span>
-                <span class="jira-task-days">⏱${t.estimatedDays||2}d</span>
+                <div class="work-task-status-dot"></div>
+                <span class="work-task-id" style="color:${color}">${role.substring(0,3).toUpperCase()}-${ti+1}</span>
+                <span class="work-task-copy">
+                    <span class="work-task-title ${isDone?'done-title':''}">${t.title}</span>
+                    ${description ? `<span class="work-task-desc">${description}</span>` : ''}
+                </span>
+                <span class="work-task-prio priority-${t.priority}">${t.priority}</span>
+                <span class="work-task-days">⏱${t.estimatedDays||2}d</span>
             `;
             taskList.appendChild(row);
         });
@@ -5626,10 +5730,10 @@ function jiraRenderBacklog() {
             items.forEach(({ obj, kr }) => {
                 (kr.tasks || []).forEach(t => {
                     totalTasks++;
-                    const isDone = jiraTaskKanbanState({ key: jiraTaskKey(obj.id, kr.id, t.id), task: t }) === 'done' ||
+                    const isDone = workTaskKanbanState({ key: workTaskKey(obj.id, kr.id, t.id), task: t }) === 'done' ||
                         (() => { try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; } })();
                     if (isDone) totalDone++;
-                    if (jiraIsBoardTaskSelected(obj.id, kr.id, t.id)) totalSelected++;
+                    if (workIsBoardTaskSelected(obj.id, kr.id, t.id)) totalSelected++;
                 });
             });
             const groupPct = totalTasks > 0 ? Math.round(totalDone / totalTasks * 100) : 0;
@@ -5642,11 +5746,11 @@ function jiraRenderBacklog() {
                 `<span style="width:7px;height:7px;border-radius:50%;background:${areaColors[a]||'#999'};display:inline-block" title="${ROLE_LABELS[a]||a}"></span>`
             ).join('');
 
-            const sprintLabel = jiraGetSprintGroupLabel(sn);
+            const sprintLabel = workGetSprintGroupLabel(sn);
             groupEl.innerHTML = `
                 <div class="backlog-sprint-section-header" onclick="this.parentElement.classList.toggle('collapsed')">
-                    <button class="jira-board-toggle ${groupAllSelected ? 'checked' : ''} ${groupSomeSelected ? 'mixed' : ''}"
-                            onclick="jiraToggleBoardSprint(event)"
+                    <button class="work-board-toggle ${groupAllSelected ? 'checked' : ''} ${groupSomeSelected ? 'mixed' : ''}"
+                            onclick="workToggleBoardSprint(event)"
                             title="${groupAllSelected ? 'Remover sprint do board' : 'Adicionar sprint ao board'}">
                         <i class="fas ${groupAllSelected ? 'fa-check' : groupSomeSelected ? 'fa-minus' : 'fa-plus'}"></i>
                     </button>
@@ -5675,31 +5779,31 @@ function jiraRenderBacklog() {
 }
 
 // ── Abre Board a partir do backlog ────────────────────────────
-function jiraOpenBoard(e, objId, krId) {
+function workOpenBoard(e, objId, krId) {
     e.stopPropagation();
     const objList = (scheduledResult || analysisResult).objectives || [];
     const obj = objList.find(o => o.id === objId);
     const kr  = obj?.keyResults?.find(k => k.id === krId);
     if (!obj || !kr) return;
 
-    jiraSetBoardTasks((kr.tasks || []).map(task => ({ obj, kr, task })), true);
-    jiraSetView('board');
-    jiraRenderBoard();
+    workSetBoardTasks((kr.tasks || []).map(task => ({ obj, kr, task })), true);
+    workSetView('board');
+    workRenderBoard();
 }
 
 // ── BOARD ─────────────────────────────────────────────────────
-function jiraHideBoard() {
+function workHideBoard() {
     const e = document.getElementById('kanbanEmpty');
     const c = document.getElementById('kanbanCols');
     if (e) e.style.display = 'flex';
     if (c) c.style.display = 'none';
 }
 
-function jiraRenderBoard() {
-    const refs = jiraGetBoardTaskRefs();
+function workRenderBoard() {
+    const refs = workGetBoardTaskRefs();
     const emptyEl = document.getElementById('kanbanEmpty');
     const colsEl = document.getElementById('kanbanCols');
-    const labelEl = document.getElementById('jiraBoardActiveSprintLabel');
+    const labelEl = document.getElementById('workBoardActiveSprintLabel');
 
     if (labelEl) {
         labelEl.innerHTML = `<strong>${refs.length}</strong> tarefa${refs.length === 1 ? '' : 's'} selecionada${refs.length === 1 ? '' : 's'} no backlog`;
@@ -5714,9 +5818,9 @@ function jiraRenderBoard() {
             `;
         }
         if (colsEl) colsEl.style.display = 'none';
-        jiraRenderCol('kcards-todo',  'kcol-todo-count',  [], 'todo');
-        jiraRenderCol('kcards-doing', 'kcol-doing-count', [], 'doing');
-        jiraRenderCol('kcards-done',  'kcol-done-count',  [], 'done');
+        workRenderCol('kcards-todo',  'kcol-todo-count',  [], 'todo');
+        workRenderCol('kcards-doing', 'kcol-doing-count', [], 'doing');
+        workRenderCol('kcards-done',  'kcol-done-count',  [], 'done');
         return;
     }
 
@@ -5725,19 +5829,19 @@ function jiraRenderBoard() {
 
     const cols = { todo:[], doing:[], done:[] };
     refs.forEach(ref => {
-        const ks = jiraTaskKanbanState(ref);
+        const ks = workTaskKanbanState(ref);
         const lk = `task_${ref.obj.id}_${ref.kr.id}_${ref.task.id}`;
         const listDone = (() => { try { return localStorage.getItem(lk)==='true'; } catch { return false; } })();
         const col = ks || (listDone ? 'done' : 'todo');
         (cols[col] || cols.todo).push(ref);
     });
 
-    jiraRenderCol('kcards-todo',  'kcol-todo-count',  cols.todo,  'todo');
-    jiraRenderCol('kcards-doing', 'kcol-doing-count', cols.doing, 'doing');
-    jiraRenderCol('kcards-done',  'kcol-done-count',  cols.done,  'done');
+    workRenderCol('kcards-todo',  'kcol-todo-count',  cols.todo,  'todo');
+    workRenderCol('kcards-doing', 'kcol-doing-count', cols.doing, 'doing');
+    workRenderCol('kcards-done',  'kcol-done-count',  cols.done,  'done');
 }
 
-function jiraRenderCol(cardsId, countId, tasks, colName) {
+function workRenderCol(cardsId, countId, tasks, colName) {
     const container = document.getElementById(cardsId);
     const countEl   = document.getElementById(countId);
     if (!container) return;
@@ -5751,10 +5855,10 @@ function jiraRenderCol(cardsId, countId, tasks, colName) {
         container.appendChild(empty);
         return;
     }
-    tasks.forEach(ref => container.appendChild(jiraCreateCard(ref, colName)));
+    tasks.forEach(ref => container.appendChild(workCreateCard(ref, colName)));
 }
 
-function jiraCreateCard(ref, colName) {
+function workCreateCard(ref, colName) {
     const { obj, kr, task, key } = ref;
     const card = document.createElement('div');
     card.className = 'kcard';
@@ -5767,9 +5871,11 @@ function jiraCreateCard(ref, colName) {
     const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
     const color = areaColors[obj.area] || '#6366f1';
     const sprintLabel = kr.sprintNumber ? `Sprint ${kr.sprintNumber}` : 'Sem sprint';
+    const description = workTaskDescription(task);
 
     card.innerHTML = `
         <div class="kcard-title">${task.title}</div>
+        ${description ? `<div class="kcard-desc">${description}</div>` : ''}
         <div class="kcard-meta">
             <span class="meta-badge" style="background:${color}18;color:${color}">${sprintLabel}</span>
             <span class="meta-badge priority-${task.priority}">${task.priority}</span>
@@ -5797,8 +5903,8 @@ function kanbanMoveTask(taskId, toCol, e) {
     if (e) e.stopPropagation();
     kanbanTaskStates[taskId] = toCol;
     kanbanSaveStates();
-    const movedRef = jiraFindBoardTaskRef(taskId);
-    jiraSetTaskDone(movedRef, toCol === 'done');
+    const movedRef = workFindBoardTaskRef(taskId);
+    workSetTaskDone(movedRef, toCol === 'done');
     const activeId = getActiveProjectId();
     if (activeId) {
         const projects = getAllProjects();
@@ -5811,8 +5917,9 @@ function kanbanMoveTask(taskId, toCol, e) {
             saveAllProjects(projects);
         }
     }
-    jiraRenderBoard();
-    if (document.getElementById('jiraBacklogView')?.style.display !== 'none') jiraRenderBacklog();
+    workRenderBoard();
+    scheduleWorkspaceAutoSave();
+    if (document.getElementById('workBacklogView')?.style.display !== 'none') workRenderBacklog();
 }
 
 // ── Drag & Drop ───────────────────────────────────────────────
