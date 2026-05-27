@@ -269,29 +269,112 @@
                 </div>
             </div>
 
-            <!-- 4. Tarefas (Roadmap Detalhado) -->
-            <div class="tasks-container">
-                <div class="tasks-header-row">
-                    <h3><i class="fas fa-list-check"></i> Tarefas</h3>
-                    <div class="tasks-controls">
-                        <div class="tasks-group-toggle">
-                            <button class="group-btn active" id="groupByArea" onclick="setTaskGroupMode('area')"><i class="fas fa-layer-group"></i> Por Área</button>
-                            <button class="group-btn" id="groupByMilestone" onclick="setTaskGroupMode('milestone')"><i class="fas fa-flag-checkered"></i> Por Marco</button>
-                        </div>
-                        <div class="tasks-filter" id="tasksFilter">
-                            <button class="filter-btn active" onclick="filterTasks('all')">Todos</button>
-                            <button class="filter-btn" onclick="filterTasks('programming')">💻 Prog.</button>
-                            <button class="filter-btn" onclick="filterTasks('art')">🎨 Arte</button>
-                            <button class="filter-btn" onclick="filterTasks('design')">📋 Design</button>
-                            <button class="filter-btn" onclick="filterTasks('audio')">🎵 Áudio</button>
-                            <button class="filter-btn" onclick="filterTasks('qa')">🧪 QA</button>
-                        </div>
+            <!-- 4. Tarefas — Jira-style: Backlog + Board -->
+            <div class="jira-shell" id="jiraShell">
+
+                <!-- Linha 1: abas Backlog / Board -->
+                <div class="jira-tabs-bar">
+                    <button class="jira-tab active" id="jiraNavBacklog" onclick="jiraSetView('backlog')">
+                        <i class="fas fa-list"></i> Backlog
+                    </button>
+                    <button class="jira-tab" id="jiraNavBoard" onclick="jiraSetView('board')">
+                        <i class="fas fa-columns"></i> Board
+                    </button>
+                    <div class="jira-tabs-sep"></div>
+                    <!-- Sprint selector (só visível na aba Board) -->
+                    <div class="jira-board-sprint-selector" id="jiraBoardSprintBar" style="display:none">
+                        <span class="jira-filter-label">Sprint:</span>
+                        <select class="kanban-select" id="jiraBoardSprintSelect" onchange="jiraBoardSelectSprint(this.value)">
+                            <option value="">— selecione uma sprint —</option>
+                        </select>
                     </div>
                 </div>
-                <div class="tasks-grid" id="tasksGrid">
-                    <!-- Tarefas serão preenchidas dinamicamente -->
+
+                <!-- Linha 2: avatares de cargo (multiselect) -->
+                <div class="jira-roles-bar">
+                    <span class="jira-filter-label">Cargo:</span>
+                    <div class="jira-role-avatars" id="jiraRoleAvatars">
+                        <button class="jira-avatar active" data-role="programming" title="Programador" onclick="jiraToggleRole('programming')">
+                            <span class="avatar-emoji">💻</span>
+                            <span class="avatar-label">Prog.</span>
+                        </button>
+                        <button class="jira-avatar active" data-role="art" title="Artista" onclick="jiraToggleRole('art')">
+                            <span class="avatar-emoji">🎨</span>
+                            <span class="avatar-label">Arte</span>
+                        </button>
+                        <button class="jira-avatar active" data-role="design" title="Designer" onclick="jiraToggleRole('design')">
+                            <span class="avatar-emoji">📋</span>
+                            <span class="avatar-label">Design</span>
+                        </button>
+                        <button class="jira-avatar active" data-role="audio" title="Áudio" onclick="jiraToggleRole('audio')">
+                            <span class="avatar-emoji">🎵</span>
+                            <span class="avatar-label">Áudio</span>
+                        </button>
+                        <button class="jira-avatar active" data-role="qa" title="QA" onclick="jiraToggleRole('qa')">
+                            <span class="avatar-emoji">🧪</span>
+                            <span class="avatar-label">QA</span>
+                        </button>
+                    </div>
+                    <button class="jira-roles-all-btn" id="jiraRolesAllBtn" onclick="jiraSelectAllRoles()" title="Selecionar todos">Todos</button>
+                    <button class="jira-roles-all-btn" id="jiraRolesClearBtn" onclick="jiraClearRoles()" title="Limpar seleção" style="display:none">Limpar</button>
                 </div>
-            </div>
+
+                <!-- Conteúdo das abas -->
+                <div class="jira-main">
+
+                    <!-- BACKLOG VIEW -->
+                    <div id="jiraBacklogView">
+                        <div id="jiraBacklogSprints"></div>
+                        <div class="tasks-grid" id="tasksGrid" style="display:none"></div>
+                    </div>
+
+                    <!-- BOARD VIEW -->
+                    <div id="jiraBoardView" style="display:none">
+                        <div class="kanban-board" id="kanbanBoard">
+                            <div class="kanban-empty" id="kanbanEmpty">
+                                <i class="fas fa-columns" style="font-size:2rem;opacity:.3"></i>
+                                <p>Selecione uma sprint acima para abrir o board</p>
+                            </div>
+                            <div class="kanban-cols" id="kanbanCols" style="display:none">
+                                <div class="kanban-col" id="kcol-todo">
+                                    <div class="kanban-col-header kanban-col-todo">
+                                        <span class="kcol-dot"></span>
+                                        <span class="kcol-title">A Fazer</span>
+                                        <span class="kcol-count" id="kcol-todo-count">0</span>
+                                    </div>
+                                    <div class="kcol-cards" id="kcards-todo"
+                                         ondragover="kDragOver(event,'todo')"
+                                         ondrop="kDrop(event,'todo')"
+                                         ondragleave="kDragLeave(event)"></div>
+                                </div>
+                                <div class="kanban-col" id="kcol-doing">
+                                    <div class="kanban-col-header kanban-col-doing">
+                                        <span class="kcol-dot"></span>
+                                        <span class="kcol-title">Em Progresso</span>
+                                        <span class="kcol-count" id="kcol-doing-count">0</span>
+                                    </div>
+                                    <div class="kcol-cards" id="kcards-doing"
+                                         ondragover="kDragOver(event,'doing')"
+                                         ondrop="kDrop(event,'doing')"
+                                         ondragleave="kDragLeave(event)"></div>
+                                </div>
+                                <div class="kanban-col" id="kcol-done">
+                                    <div class="kanban-col-header kanban-col-done">
+                                        <span class="kcol-dot"></span>
+                                        <span class="kcol-title">Concluído</span>
+                                        <span class="kcol-count" id="kcol-done-count">0</span>
+                                    </div>
+                                    <div class="kcol-cards" id="kcards-done"
+                                         ondragover="kDragOver(event,'done')"
+                                         ondrop="kDrop(event,'done')"
+                                         ondragleave="kDragLeave(event)"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div><!-- /jira-main -->
+            </div><!-- /jira-shell -->
 
             <!-- Resumo para Edital (colapsado por padrão) -->
             <div class="edital-container" id="editalContainer">

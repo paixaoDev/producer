@@ -3049,6 +3049,7 @@ function populateResults() {
         populateMilestones();
         populateEditalSummary();
         populateHierarchicalTasks();
+        if (typeof jiraInit === 'function') jiraInit();
     } catch (error) {
         console.error('Erro ao popular resultados:', error);
         alert('Erro ao exibir os resultados.');
@@ -4986,3 +4987,419 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target === overlay) closeImportModal();
     });
 });
+
+// ============================================================
+// JIRA-STYLE VIEW — Backlog + Board
+// ============================================================
+
+let jiraSelectedRoles = new Set(['programming', 'art', 'design', 'audio', 'qa']);
+let jiraCurrentSprint = null;
+let kanbanDraggedTaskId = null;
+let kanbanDraggedFromCol = null;
+let kanbanTaskStates = {};
+
+const ALL_ROLES = ['programming', 'art', 'design', 'audio', 'qa'];
+const ROLE_LABELS = { programming:'Programador', art:'Artista', design:'Designer', audio:'Áudio', qa:'QA' };
+
+// ── Persistência ──────────────────────────────────────────────
+function kanbanStatesKey() {
+    const id = getActiveProjectId();
+    return id ? `kanban_states_${id}` : 'kanban_states_default';
+}
+function kanbanLoadStates() {
+    try { kanbanTaskStates = JSON.parse(localStorage.getItem(kanbanStatesKey()) || '{}'); }
+    catch { kanbanTaskStates = {}; }
+}
+function kanbanSaveStates() {
+    try { localStorage.setItem(kanbanStatesKey(), JSON.stringify(kanbanTaskStates)); } catch {}
+}
+
+// ── Init ──────────────────────────────────────────────────────
+function jiraInit() {
+    if (!analysisResult) return;
+    kanbanLoadStates();
+    jiraSelectedRoles = new Set(ALL_ROLES);
+    jiraUpdateAvatarUI();
+    jiraSetView('backlog');
+}
+
+// ── Navegação Backlog / Board ─────────────────────────────────
+function jiraSetView(view) {
+    const backlogView = document.getElementById('jiraBacklogView');
+    const boardView   = document.getElementById('jiraBoardView');
+    const navBacklog  = document.getElementById('jiraNavBacklog');
+    const navBoard    = document.getElementById('jiraNavBoard');
+    const sprintBar   = document.getElementById('jiraBoardSprintBar');
+    if (!backlogView || !boardView) return;
+
+    if (view === 'backlog') {
+        backlogView.style.display = 'block';
+        boardView.style.display   = 'none';
+        navBacklog.classList.add('active');
+        navBoard.classList.remove('active');
+        if (sprintBar) sprintBar.style.display = 'none';
+        jiraRenderBacklog();
+    } else {
+        backlogView.style.display = 'none';
+        boardView.style.display   = 'block';
+        navBoard.classList.add('active');
+        navBacklog.classList.remove('active');
+        if (sprintBar) sprintBar.style.display = 'flex';
+        jiraPopulateBoardSprints();
+        if (jiraCurrentSprint) jiraRenderBoard();
+    }
+}
+
+// ── Cargo (multiselect) ───────────────────────────────────────
+function jiraToggleRole(role) {
+    if (jiraSelectedRoles.has(role)) {
+        if (jiraSelectedRoles.size === 1) return; // mínimo 1
+        jiraSelectedRoles.delete(role);
+    } else {
+        jiraSelectedRoles.add(role);
+    }
+    jiraUpdateAvatarUI();
+    jiraRefreshCurrentView();
+}
+
+function jiraSelectAllRoles() {
+    jiraSelectedRoles = new Set(ALL_ROLES);
+    jiraUpdateAvatarUI();
+    jiraRefreshCurrentView();
+}
+
+function jiraClearRoles() {
+    jiraSelectedRoles = new Set([ALL_ROLES[0]]);
+    jiraUpdateAvatarUI();
+    jiraRefreshCurrentView();
+}
+
+function jiraUpdateAvatarUI() {
+    document.querySelectorAll('.jira-avatar').forEach(a => {
+        a.classList.toggle('active', jiraSelectedRoles.has(a.dataset.role));
+    });
+    const allSelected = jiraSelectedRoles.size === ALL_ROLES.length;
+    const clearBtn = document.getElementById('jiraRolesClearBtn');
+    const allBtn   = document.getElementById('jiraRolesAllBtn');
+    if (clearBtn) clearBtn.style.display = allSelected ? 'none' : '';
+    if (allBtn)   allBtn.style.display   = allSelected ? '' : 'none';
+}
+
+function jiraRefreshCurrentView() {
+    const boardVisible = document.getElementById('jiraBoardView')?.style.display !== 'none';
+    if (boardVisible) {
+        jiraPopulateBoardSprints();
+        if (jiraCurrentSprint && !jiraSelectedRoles.has(jiraCurrentSprint.obj.area)) {
+            jiraCurrentSprint = null;
+            jiraHideBoard();
+        } else if (jiraCurrentSprint) {
+            jiraRenderBoard();
+        }
+    } else {
+        jiraRenderBacklog();
+    }
+}
+
+// ── BACKLOG ───────────────────────────────────────────────────
+function jiraRenderBacklog() {
+    const container = document.getElementById('jiraBacklogSprints');
+    if (!container || !analysisResult) return;
+    container.innerHTML = '';
+
+    const objList    = (scheduledResult || analysisResult).objectives || [];
+    const milestones = (analysisResult.milestones || []).slice().sort((a,b) => a.month - b.month);
+    const typeIcons  = { vertical_slice:'🔬', alpha:'⚡', beta:'🧪', gold:'🏆', release:'🚀', prototype:'🔬', demo:'🎬' };
+    const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
+
+    milestones.forEach((ms, msIdx) => {
+        const msEnd   = ms.month;
+        const msStart = msIdx > 0 ? milestones[msIdx-1].month : 0;
+
+        const sprintsByRole = {};
+        objList.forEach(obj => {
+            if (!jiraSelectedRoles.has(obj.area)) return;
+            const objEnd = obj.endMonth || obj.timeline?.endMonth || 0;
+            if (objEnd <= msStart || objEnd > msEnd) return;
+            if (!sprintsByRole[obj.area]) sprintsByRole[obj.area] = [];
+            (obj.keyResults || []).forEach(kr => sprintsByRole[obj.area].push({ obj, kr }));
+        });
+
+        const allSprints = Object.values(sprintsByRole).flat();
+        if (allSprints.length === 0) return;
+
+        const msGroup = document.createElement('div');
+        msGroup.className = 'jira-sprint-group';
+
+        // Calcula progresso total do marco
+        const totalTasks = allSprints.reduce((s, {kr}) => s + (kr.tasks||[]).length, 0);
+        const doneTasks  = allSprints.reduce((s, {obj,kr}) => s + (kr.tasks||[]).filter(t => {
+            if (kanbanTaskStates[t.id] === 'done') return true;
+            try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; }
+        }).length, 0);
+        const pct = totalTasks > 0 ? Math.round(doneTasks/totalTasks*100) : 0;
+
+        const msHdr = document.createElement('div');
+        msHdr.className = 'jira-sprint-header';
+        msHdr.innerHTML = `
+            <i class="fas fa-chevron-down jira-sprint-chevron"></i>
+            <span class="jira-sprint-name">${typeIcons[ms.type]||'📍'} M${ms.month}: ${ms.title}</span>
+            <span class="jira-sprint-meta">
+                <span class="jira-sprint-count">${allSprints.length} sprints · ${doneTasks}/${totalTasks}</span>
+                ${pct===100 ? '<span style="color:var(--success-color);font-weight:600">✓</span>' : `<span>${pct}%</span>`}
+            </span>
+        `;
+        msHdr.onclick = () => msGroup.classList.toggle('collapsed');
+        msGroup.appendChild(msHdr);
+
+        const msBody = document.createElement('div');
+        msBody.className = 'jira-sprint-body';
+
+        ALL_ROLES.filter(r => sprintsByRole[r]?.length).forEach(role => {
+            const color = areaColors[role] || '#6366f1';
+
+            // Separador de área quando múltiplos cargos ativos
+            if (jiraSelectedRoles.size > 1) {
+                const sep = document.createElement('div');
+                sep.style.cssText = `display:flex;align-items:center;gap:.5rem;padding:.35rem 1rem;background:${color}12;border-bottom:1px solid ${color}20;`;
+                sep.innerHTML = `<span style="font-size:.69rem;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.05em">${ROLE_LABELS[role]}</span>`;
+                msBody.appendChild(sep);
+            }
+
+            sprintsByRole[role].forEach(({ obj, kr }) => {
+                const tasks     = kr.tasks || [];
+                const doneCount = tasks.filter(t => {
+                    if (kanbanTaskStates[t.id] === 'done') return true;
+                    try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; }
+                }).length;
+                const sprintPct = tasks.length > 0 ? Math.round(doneCount/tasks.length*100) : 0;
+
+                const sprintGroup = document.createElement('div');
+                sprintGroup.style.cssText = 'border-bottom:1px solid var(--gray-100);';
+
+                const sprintHdr = document.createElement('div');
+                sprintHdr.className = 'jira-sprint-header';
+                sprintHdr.style.cssText = 'padding-left:1.75rem;background:white;';
+                sprintHdr.innerHTML = `
+                    <i class="fas fa-chevron-down jira-sprint-chevron"></i>
+                    <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
+                    <span class="jira-sprint-name" style="font-weight:500;font-size:.82rem">${kr.title}</span>
+                    <span class="jira-sprint-meta">
+                        <span class="jira-sprint-count">${doneCount}/${tasks.length}</span>
+                        ${sprintPct===100 ? '<span style="color:var(--success-color);font-size:.7rem;font-weight:600">✓</span>' : ''}
+                    </span>
+                    <button class="jira-sprint-open-board" onclick="jiraOpenBoard(event,'${obj.id}','${kr.id}')">
+                        <i class="fas fa-columns"></i> Board
+                    </button>
+                `;
+                sprintHdr.onclick = (e) => {
+                    if (e.target.closest('.jira-sprint-open-board')) return;
+                    sprintGroup.classList.toggle('collapsed');
+                };
+                sprintGroup.appendChild(sprintHdr);
+
+                const taskList = document.createElement('div');
+                tasks.forEach((t, ti) => {
+                    const ks    = kanbanTaskStates[t.id];
+                    const lk    = `task_${obj.id}_${kr.id}_${t.id}`;
+                    const isDone  = ks === 'done' || (() => { try { return localStorage.getItem(lk)==='true'; } catch { return false; } })();
+                    const isDoing = ks === 'doing';
+                    const sCls  = isDone ? 'jira-task-status-done' : isDoing ? 'jira-task-status-doing' : 'jira-task-status-todo';
+
+                    const row = document.createElement('div');
+                    row.className = `jira-sprint-task-row ${sCls}`;
+                    row.innerHTML = `
+                        <div class="jira-task-status-dot"></div>
+                        <span class="jira-task-id" style="color:${color}">${role.substring(0,3).toUpperCase()}-${ti+1}</span>
+                        <span class="jira-task-title ${isDone?'done-title':''}">${t.title}</span>
+                        <span class="jira-task-prio priority-${t.priority}">${t.priority}</span>
+                        <span class="jira-task-days">⏱${t.estimatedDays||2}d</span>
+                    `;
+                    taskList.appendChild(row);
+                });
+
+                sprintGroup.appendChild(taskList);
+                msBody.appendChild(sprintGroup);
+            });
+        });
+
+        msGroup.appendChild(msBody);
+        container.appendChild(msGroup);
+    });
+
+    if (!container.children.length) {
+        container.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--gray-400)">Nenhuma tarefa para os cargos selecionados.</div>';
+    }
+}
+
+// ── Abre Board a partir do backlog ────────────────────────────
+function jiraOpenBoard(e, objId, krId) {
+    e.stopPropagation();
+    const objList = (scheduledResult || analysisResult).objectives || [];
+    const obj = objList.find(o => o.id === objId);
+    const kr  = obj?.keyResults?.find(k => k.id === krId);
+    if (!obj || !kr) return;
+    jiraCurrentSprint = { obj, kr };
+    jiraSetView('board');
+    const sel = document.getElementById('jiraBoardSprintSelect');
+    if (sel) {
+        const val = JSON.stringify({ objId, krId });
+        for (const opt of sel.options) { if (opt.value === val) { sel.value = val; break; } }
+    }
+    jiraRenderBoard();
+}
+
+// ── BOARD ─────────────────────────────────────────────────────
+function jiraPopulateBoardSprints() {
+    const sel = document.getElementById('jiraBoardSprintSelect');
+    if (!sel || !analysisResult) return;
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— selecione uma sprint —</option>';
+
+    const objList    = (scheduledResult || analysisResult).objectives || [];
+    const milestones = (analysisResult.milestones || []).slice().sort((a,b) => a.month - b.month);
+    const typeIcons  = { vertical_slice:'🔬', alpha:'⚡', beta:'🧪', gold:'🏆', release:'🚀', prototype:'🔬', demo:'🎬' };
+
+    milestones.forEach((ms, msIdx) => {
+        const msEnd   = ms.month;
+        const msStart = msIdx > 0 ? milestones[msIdx-1].month : 0;
+        const group   = document.createElement('optgroup');
+        group.label   = `${typeIcons[ms.type]||'📍'} M${ms.month}: ${ms.title}`;
+        let hasItems  = false;
+
+        objList.forEach(obj => {
+            if (!jiraSelectedRoles.has(obj.area)) return;
+            const objEnd = obj.endMonth || obj.timeline?.endMonth || 0;
+            if (objEnd <= msStart || objEnd > msEnd) return;
+            (obj.keyResults || []).forEach(kr => {
+                const opt = document.createElement('option');
+                opt.value = JSON.stringify({ objId: obj.id, krId: kr.id });
+                opt.textContent = `[${obj.area}] ${kr.title} (${(kr.tasks||[]).length}t)`;
+                group.appendChild(opt);
+                hasItems = true;
+            });
+        });
+        if (hasItems) sel.appendChild(group);
+    });
+
+    if (prev) for (const opt of sel.options) { if (opt.value === prev) { sel.value = prev; break; } }
+}
+
+function jiraBoardSelectSprint(val) {
+    if (!val) { jiraHideBoard(); jiraCurrentSprint = null; return; }
+    try {
+        const { objId, krId } = JSON.parse(val);
+        const objList = (scheduledResult || analysisResult).objectives || [];
+        const obj = objList.find(o => o.id === objId);
+        const kr  = obj?.keyResults?.find(k => k.id === krId);
+        if (!obj || !kr) { jiraHideBoard(); return; }
+        jiraCurrentSprint = { obj, kr };
+        jiraRenderBoard();
+    } catch { jiraHideBoard(); }
+}
+
+function jiraHideBoard() {
+    const e = document.getElementById('kanbanEmpty');
+    const c = document.getElementById('kanbanCols');
+    if (e) e.style.display = 'flex';
+    if (c) c.style.display = 'none';
+}
+
+function jiraRenderBoard() {
+    if (!jiraCurrentSprint) return;
+    const { obj, kr } = jiraCurrentSprint;
+    const tasks = kr.tasks || [];
+
+    document.getElementById('kanbanEmpty').style.display = 'none';
+    document.getElementById('kanbanCols').style.display  = 'grid';
+
+    const cols = { todo:[], doing:[], done:[] };
+    tasks.forEach(t => {
+        const ks = kanbanTaskStates[t.id];
+        const lk = `task_${obj.id}_${kr.id}_${t.id}`;
+        const listDone = (() => { try { return localStorage.getItem(lk)==='true'; } catch { return false; } })();
+        cols[ks || (listDone ? 'done' : 'todo')].push(t);
+    });
+
+    jiraRenderCol('kcards-todo',  'kcol-todo-count',  cols.todo,  'todo');
+    jiraRenderCol('kcards-doing', 'kcol-doing-count', cols.doing, 'doing');
+    jiraRenderCol('kcards-done',  'kcol-done-count',  cols.done,  'done');
+}
+
+function jiraRenderCol(cardsId, countId, tasks, colName) {
+    const container = document.getElementById(cardsId);
+    const countEl   = document.getElementById(countId);
+    if (!container) return;
+    container.innerHTML = '';
+    if (countEl) countEl.textContent = tasks.length;
+
+    if (!tasks.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'text-align:center;padding:1.5rem .5rem;color:var(--gray-400);font-size:.78rem;';
+        empty.textContent = colName === 'done' ? '🎉 Tudo feito!' : 'Arraste tarefas aqui';
+        container.appendChild(empty);
+        return;
+    }
+    tasks.forEach(t => container.appendChild(jiraCreateCard(t, colName)));
+}
+
+function jiraCreateCard(task, colName) {
+    const card = document.createElement('div');
+    card.className = 'kcard';
+    card.draggable = true;
+    card.dataset.taskId = task.id;
+
+    const prevCol = colName === 'doing' ? 'todo'  : colName === 'done' ? 'doing' : null;
+    const nextCol = colName === 'todo'  ? 'doing' : colName === 'doing' ? 'done' : null;
+    const typeIcons = { feature:'⚙️', fix:'🐛', art:'🎨', design:'📐', audio:'🔊', test:'🧪', config:'🔧', doc:'📄' };
+
+    card.innerHTML = `
+        <div class="kcard-title">${task.title}</div>
+        <div class="kcard-meta">
+            <span class="meta-badge priority-${task.priority}">${task.priority}</span>
+            <span class="meta-badge" style="background:var(--gray-100);color:var(--gray-500)">${typeIcons[task.type]||'📌'} ${task.type||'feature'}</span>
+            <span class="kcard-days">⏱ ${task.estimatedDays||2}d</span>
+        </div>
+        <div class="kcard-actions">
+            ${prevCol ? `<button class="kbtn-move" onclick="kanbanMoveTask('${task.id}','${prevCol}',event)">${prevCol==='todo'?'← A Fazer':'← Em Prog.'}</button>` : ''}
+            ${nextCol ? `<button class="kbtn-move" onclick="kanbanMoveTask('${task.id}','${nextCol}',event)">${nextCol==='doing'?'Em Prog. →':'Concluído →'}</button>` : ''}
+        </div>
+    `;
+
+    card.addEventListener('dragstart', e => {
+        kanbanDraggedTaskId  = task.id;
+        kanbanDraggedFromCol = colName;
+        setTimeout(() => card.classList.add('dragging'), 0);
+        e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    return card;
+}
+
+function kanbanMoveTask(taskId, toCol, e) {
+    if (e) e.stopPropagation();
+    kanbanTaskStates[taskId] = toCol;
+    kanbanSaveStates();
+    if (jiraCurrentSprint) {
+        const { obj, kr } = jiraCurrentSprint;
+        try { localStorage.setItem(`task_${obj.id}_${kr.id}_${taskId}`, toCol==='done'?'true':'false'); } catch {}
+    }
+    jiraRenderBoard();
+}
+
+// ── Drag & Drop ───────────────────────────────────────────────
+function kDragOver(e, col) {
+    e.preventDefault();
+    e.currentTarget.classList.add('drag-over');
+}
+function kDragLeave(e) {
+    e.currentTarget.classList.remove('drag-over');
+}
+function kDrop(e, col) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    if (kanbanDraggedTaskId && kanbanDraggedFromCol !== col) {
+        kanbanMoveTask(kanbanDraggedTaskId, col);
+    }
+    kanbanDraggedTaskId  = null;
+    kanbanDraggedFromCol = null;
+}

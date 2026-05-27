@@ -3216,3 +3216,349 @@ body {
     background: var(--gray-700);
     color: var(--gray-300);
 }
+
+/* ============================================================
+   JIRA-STYLE SHELL — Backlog + Board
+   ============================================================ */
+
+.jira-shell {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+    margin-top: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Linha 1: abas Backlog / Board */
+.jira-tabs-bar {
+    display: flex;
+    align-items: center;
+    border-bottom: 2px solid var(--gray-200);
+    background: var(--gray-50);
+    padding: 0 1rem;
+}
+.jira-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.75rem 1.1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--gray-500);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.jira-tab:hover { color: var(--gray-800); }
+.jira-tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+    background: white;
+}
+.jira-tabs-sep { flex: 1; }
+.jira-board-sprint-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+}
+
+/* Linha 2: avatares de cargo (multiselect) */
+.jira-roles-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--gray-100);
+    background: white;
+    flex-wrap: wrap;
+}
+.jira-filter-label {
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: var(--gray-400);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+.jira-role-avatars {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.jira-avatar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 2px solid var(--gray-200);
+    background: var(--gray-50);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    min-width: 52px;
+}
+.jira-avatar:hover {
+    border-color: var(--primary-color);
+    background: rgba(99,102,241,0.05);
+}
+.jira-avatar.active {
+    border-color: var(--primary-color);
+    background: rgba(99,102,241,0.1);
+    box-shadow: 0 0 0 2px rgba(99,102,241,0.15);
+}
+.avatar-emoji {
+    font-size: 1.25rem;
+    line-height: 1;
+    display: block;
+}
+.avatar-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--gray-500);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1;
+}
+.jira-avatar.active .avatar-label { color: var(--primary-color); }
+.jira-roles-all-btn {
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    background: none;
+    border: 1px solid var(--primary-color);
+    border-radius: 6px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all 0.12s;
+    font-family: inherit;
+}
+.jira-roles-all-btn:hover { background: var(--primary-color); color: white; }
+
+/* Conteúdo principal */
+.jira-main {
+    padding: 1.25rem 1.5rem;
+    min-height: 400px;
+}
+
+/* Backlog: marcos e sprints colapsáveis */
+.jira-sprint-group {
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+.jira-sprint-header {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.7rem 1rem;
+    background: var(--gray-50);
+    cursor: pointer;
+    transition: background 0.12s;
+    user-select: none;
+}
+.jira-sprint-header:hover { background: var(--gray-100); }
+.jira-sprint-chevron {
+    font-size: 0.7rem;
+    color: var(--gray-400);
+    transition: transform 0.2s;
+    width: 10px;
+    flex-shrink: 0;
+}
+.jira-sprint-group.collapsed .jira-sprint-chevron { transform: rotate(-90deg); }
+.jira-sprint-group.collapsed .jira-sprint-body { display: none; }
+.jira-sprint-name {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--gray-800);
+    flex: 1;
+}
+.jira-sprint-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.73rem;
+    color: var(--gray-500);
+}
+.jira-sprint-count {
+    background: var(--gray-200);
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--gray-600);
+}
+.jira-sprint-open-board {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    background: rgba(99,102,241,0.08);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 5px;
+    padding: 3px 9px;
+    cursor: pointer;
+    transition: all 0.12s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.jira-sprint-open-board:hover { background: var(--primary-color); color: white; }
+.jira-sprint-body { background: white; }
+
+/* Linha de tarefa no backlog */
+.jira-sprint-task-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.4rem 1rem;
+    border-bottom: 1px solid var(--gray-100);
+    font-size: 0.79rem;
+    color: var(--gray-700);
+    transition: background 0.1s;
+}
+.jira-sprint-task-row:last-child { border-bottom: none; }
+.jira-sprint-task-row:hover { background: var(--gray-50); }
+.jira-task-status-dot {
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.jira-task-status-todo  .jira-task-status-dot { background: var(--gray-300); }
+.jira-task-status-doing .jira-task-status-dot { background: var(--info-color); }
+.jira-task-status-done  .jira-task-status-dot { background: var(--success-color); }
+.jira-task-id {
+    font-size: 0.69rem;
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 55px;
+}
+.jira-task-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jira-task-title.done-title { text-decoration: line-through; color: var(--gray-400); }
+.jira-task-days { font-size: 0.69rem; color: var(--gray-400); white-space: nowrap; }
+.jira-task-prio {
+    font-size: 0.64rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+/* Kanban Board */
+.kanban-board { min-height: 300px; }
+.kanban-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 3rem;
+    color: var(--gray-400);
+    font-size: 0.9rem;
+    background: var(--gray-50);
+    border: 1px dashed var(--gray-300);
+    border-radius: var(--border-radius-lg);
+}
+.kanban-cols {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+.kanban-col {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+}
+.kanban-col-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--gray-200);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--gray-700);
+}
+.kanban-col-todo  { border-top: 3px solid var(--gray-400); }
+.kanban-col-doing { border-top: 3px solid var(--info-color); }
+.kanban-col-done  { border-top: 3px solid var(--success-color); }
+.kcol-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.kanban-col-todo  .kcol-dot { background: var(--gray-400); }
+.kanban-col-doing .kcol-dot { background: var(--info-color); }
+.kanban-col-done  .kcol-dot { background: var(--success-color); }
+.kcol-title { flex: 1; }
+.kcol-count {
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 10px;
+    padding: 1px 7px;
+    color: var(--gray-500);
+}
+.kcol-cards {
+    padding: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 80px;
+    transition: background 0.15s;
+}
+.kcol-cards.drag-over { background: rgba(99,102,241,0.06); border-radius: 8px; }
+
+/* Kanban card */
+.kcard {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 7px;
+    padding: 0.65rem 0.85rem;
+    cursor: grab;
+    transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+    user-select: none;
+}
+.kcard:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); border-color: var(--primary-color); }
+.kcard.dragging { opacity: 0.45; cursor: grabbing; }
+.kcard-title { font-size: 0.8rem; font-weight: 500; color: var(--gray-800); line-height: 1.45; margin-bottom: 0.5rem; }
+.kcard-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; }
+.kcard-days { margin-left: auto; font-size: 0.68rem; color: var(--gray-400); }
+.kcard-actions { display: none; gap: 0.3rem; margin-top: 0.5rem; }
+.kcard:hover .kcard-actions { display: flex; }
+.kbtn-move {
+    flex: 1; padding: 3px 6px; border-radius: 5px;
+    border: 1px solid var(--gray-200); background: var(--gray-50);
+    color: var(--gray-500); font-size: 0.68rem; cursor: pointer;
+    transition: all 0.12s; font-family: inherit;
+}
+.kbtn-move:hover { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+
+/* kanban-select */
+.kanban-select {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 7px;
+    padding: 5px 10px;
+    font-size: 0.82rem;
+    color: var(--gray-700);
+    font-family: inherit;
+    cursor: pointer;
+    min-width: 240px;
+    transition: border-color 0.15s;
+}
+.kanban-select:focus { outline: none; border-color: var(--primary-color); }
+
+@media (max-width: 900px) {
+    .jira-tabs-bar { padding: 0 0.5rem; }
+    .kanban-cols { grid-template-columns: 1fr; }
+    .kanban-select { min-width: 160px; }
+    .jira-avatar { min-width: 44px; padding: 3px 5px; }
+}
