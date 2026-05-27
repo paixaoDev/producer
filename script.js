@@ -5646,7 +5646,10 @@ function workRenderBacklog() {
                 <i class="fas ${allSelected ? 'fa-check' : someSelected ? 'fa-minus' : 'fa-plus'}"></i>
             </button>
             <i class="fas fa-chevron-down work-sprint-chevron"></i>
-            <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
+            <span class="backlog-sprint-area-pill work-sprint-area-pill" style="background:${color}18;color:${color};border-color:${color}44" title="${ROLE_LABELS[role]||role}">
+                <span class="backlog-sprint-area-dot" style="background:${color}"></span>
+                ${ROLE_LABELS[role]||role}
+            </span>
             ${extraLabel ? `<span class="work-sprint-num-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${extraLabel}</span>` : ''}
             <span class="work-sprint-name" style="font-weight:500;font-size:.84rem">${kr.title}</span>
             <span class="sprint-milestone-tag" title="${ms.title}" data-ms-id="${ms.id}"
@@ -5689,7 +5692,6 @@ function workRenderBacklog() {
                     <i class="fas ${isSelected ? 'fa-check' : 'fa-plus'}"></i>
                 </button>
                 <div class="work-task-status-dot"></div>
-                <span class="work-task-id" style="color:${color}">${role.substring(0,3).toUpperCase()}-${ti+1}</span>
                 <span class="work-task-copy">
                     <span class="work-task-title ${isDone?'done-title':''}">${t.title}</span>
                     ${description ? `<span class="work-task-desc">${description}</span>` : ''}
@@ -5705,16 +5707,39 @@ function workRenderBacklog() {
 
     if (backlogGroupMode === 'task') {
         // ── Modo "Por Tarefa": agrupa por área/objetivo (comportamento original) ──
-        allItems.sort((a, b) => {
-            const pa = sprintPct(a), pb = sprintPct(b);
-            if ((pa === 100) !== (pb === 100)) return pa === 100 ? 1 : -1;
+        const sortedItems = allItems.slice().sort((a, b) => {
             if (a.ms.month !== b.ms.month) return a.ms.month - b.ms.month;
             return ALL_ROLES.indexOf(a.obj.area) - ALL_ROLES.indexOf(b.obj.area);
-        });
-        allItems.forEach((item, idx) => {
+        }).map(item => ({
+            ...item,
+            percentComplete: sprintPct(item),
+        }));
+
+        const partitionedItems = WorkBacklogHelpers.partitionBacklogItems(sortedItems);
+
+        partitionedItems.active.forEach((item, idx) => {
             const label = item.kr.sprintNumber ? `Sprint ${item.kr.sprintNumber}` : null;
             container.appendChild(renderKrGroup(item, idx, label));
         });
+
+        if (partitionedItems.completed.length) {
+            const completedWrap = document.createElement('div');
+            completedWrap.className = 'backlog-completed-sprints';
+            completedWrap.innerHTML = `
+                <div class="backlog-completed-sprints-title">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Sprints concluídas</span>
+                    <span>${partitionedItems.completed.length}</span>
+                </div>
+            `;
+            partitionedItems.completed.forEach((item, idx) => {
+                const label = item.kr.sprintNumber ? `Sprint ${item.kr.sprintNumber}` : null;
+                const completedGroup = renderKrGroup(item, idx + 1, label);
+                completedGroup.classList.add('completed-archived', 'collapsed');
+                completedWrap.appendChild(completedGroup);
+            });
+            container.appendChild(completedWrap);
+        }
 
     } else {
         // ── Modo "Por Sprint": agrupa KRs em blocos de sprint numerada ──
@@ -5730,14 +5755,7 @@ function workRenderBacklog() {
             .map(Number)
             .sort((a, b) => a - b);
 
-        sortedSprints.forEach((sn, groupIdx) => {
-            const items = sprintGroups[sn];
-
-            // Header do grupo de sprint
-            const groupEl = document.createElement('div');
-            groupEl.className = 'backlog-sprint-section';
-
-            // Calcula stats do grupo
+        function getSprintGroupStats(items) {
             let totalTasks = 0, totalDone = 0, totalSelected = 0;
             items.forEach(({ obj, kr }) => {
                 (kr.tasks || []).forEach(t => {
@@ -5748,14 +5766,31 @@ function workRenderBacklog() {
                     if (workIsBoardTaskSelected(obj.id, kr.id, t.id)) totalSelected++;
                 });
             });
-            const groupPct = totalTasks > 0 ? Math.round(totalDone / totalTasks * 100) : 0;
+
+            return {
+                totalTasks,
+                totalDone,
+                totalSelected,
+                percentComplete: totalTasks > 0 ? Math.round(totalDone / totalTasks * 100) : 0,
+            };
+        }
+
+        function renderSprintSection(section, groupIdx, completed = false) {
+            const { sprintNumber: sn, items, stats } = section;
+            const groupEl = document.createElement('div');
+            groupEl.className = `backlog-sprint-section${completed ? ' completed collapsed' : ''}`;
+
+            const { totalTasks, totalDone, totalSelected, percentComplete: groupPct } = stats;
             const groupAllSelected = totalTasks > 0 && totalSelected === totalTasks;
             const groupSomeSelected = totalSelected > 0 && !groupAllSelected;
 
             // Quais áreas estão nessa sprint
             const areasInSprint = [...new Set(items.map(i => i.obj.area))];
-            const areaDotsHtml = areasInSprint.map(a =>
-                `<span style="width:7px;height:7px;border-radius:50%;background:${areaColors[a]||'#999'};display:inline-block" title="${ROLE_LABELS[a]||a}"></span>`
+            const areaTagsHtml = areasInSprint.map(a =>
+                `<span class="backlog-sprint-area-pill" style="background:${areaColors[a]||'#999'}18;color:${areaColors[a]||'#666'};border-color:${areaColors[a]||'#999'}44" title="${ROLE_LABELS[a]||a}">
+                    <span class="backlog-sprint-area-dot" style="background:${areaColors[a]||'#999'}"></span>
+                    ${ROLE_LABELS[a]||a}
+                </span>`
             ).join('');
 
             const sprintLabel = workGetSprintGroupLabel(sn);
@@ -5768,9 +5803,12 @@ function workRenderBacklog() {
                     </button>
                     <i class="fas fa-chevron-down backlog-sprint-chevron"></i>
                     <span class="backlog-sprint-section-title">${sprintLabel}</span>
-                    <span class="backlog-sprint-section-areas">${areaDotsHtml}</span>
+                    <span class="backlog-sprint-section-areas">
+                        <span class="backlog-sprint-area-label">Áreas</span>
+                        ${areaTagsHtml}
+                    </span>
                     <span class="backlog-sprint-section-stats">${totalSelected} no board · ${totalDone}/${totalTasks} tarefas${groupPct === 100 ? ' ✓' : ''}</span>
-                    ${groupPct > 0 ? `<div class="backlog-sprint-section-prog"><div style="width:${groupPct}%;background:var(--primary-color);height:100%;border-radius:2px;transition:width .3s"></div></div>` : ''}
+                    ${groupPct > 0 ? `<div class="backlog-sprint-section-prog"><div style="width:${groupPct}%;height:100%;border-radius:2px;transition:width .3s"></div></div>` : ''}
                 </div>
             `;
 
@@ -5785,8 +5823,41 @@ function workRenderBacklog() {
                 groupEl.appendChild(renderKrGroup(item, idx, null));
             });
 
-            container.appendChild(groupEl);
+            return groupEl;
+        }
+
+        const sprintSections = sortedSprints.map(sn => {
+            const items = sprintGroups[sn];
+            const stats = getSprintGroupStats(items);
+            return {
+                sprintNumber: sn,
+                items,
+                stats,
+                percentComplete: stats.percentComplete,
+            };
         });
+
+        const partitionedSections = WorkBacklogHelpers.partitionSprintSections(sprintSections);
+
+        partitionedSections.active.forEach((section, groupIdx) => {
+            container.appendChild(renderSprintSection(section, groupIdx));
+        });
+
+        if (partitionedSections.completed.length) {
+            const completedWrap = document.createElement('div');
+            completedWrap.className = 'backlog-completed-sprints';
+            completedWrap.innerHTML = `
+                <div class="backlog-completed-sprints-title">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Sprints concluídas</span>
+                    <span>${partitionedSections.completed.length}</span>
+                </div>
+            `;
+            partitionedSections.completed.forEach((section, groupIdx) => {
+                completedWrap.appendChild(renderSprintSection(section, groupIdx, true));
+            });
+            container.appendChild(completedWrap);
+        }
     }
 }
 

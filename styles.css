@@ -3821,6 +3821,9 @@ body.results-workspace-mode .workspace-body {
     color: var(--gray-800);
     flex: 1;
 }
+.work-sprint-area-pill {
+    flex-shrink: 0;
+}
 .work-sprint-meta {
     display: flex;
     align-items: center;
@@ -4135,13 +4138,6 @@ body.results-workspace-mode .workspace-body {
 .work-task-status-todo  .work-task-status-dot { background: var(--gray-300); }
 .work-task-status-doing .work-task-status-dot { background: var(--info-color); }
 .work-task-status-done  .work-task-status-dot { background: var(--success-color); }
-.work-task-id {
-    font-size: 0.69rem;
-    font-weight: 600;
-    white-space: nowrap;
-    min-width: 55px;
-    padding-top: 1px;
-}
 .work-task-copy {
     flex: 1;
     min-width: 0;
@@ -4356,6 +4352,53 @@ body.results-workspace-mode .workspace-body {
 .backlog-sprint-section {
     margin-bottom: 1rem;
 }
+.backlog-completed-sprints {
+    margin-top: 1.2rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--gray-200);
+}
+.backlog-completed-sprints-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.65rem;
+    color: var(--gray-500);
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+.backlog-completed-sprints-title span:last-child {
+    margin-left: auto;
+    border: 1px solid var(--gray-200);
+    border-radius: 99px;
+    padding: 1px 7px;
+    color: var(--gray-400);
+    font-size: 0.68rem;
+}
+.backlog-completed-sprints > .work-sprint-group {
+    opacity: 0.58;
+    filter: grayscale(0.8) saturate(0.35);
+    border-color: var(--gray-200);
+    box-shadow: none;
+}
+.backlog-completed-sprints > .work-sprint-group.board-active {
+    border-color: var(--gray-200);
+    box-shadow: none;
+}
+.backlog-completed-sprints > .work-sprint-group .work-sprint-header {
+    background: #f6f7f9;
+}
+.backlog-completed-sprints > .work-sprint-group .work-sprint-name,
+.backlog-completed-sprints > .work-sprint-group .work-sprint-meta {
+    color: var(--gray-500);
+}
+.backlog-completed-sprints > .work-sprint-group .work-board-selected-count {
+    color: var(--gray-400);
+}
+.backlog-completed-sprints > .work-sprint-group .work-board-toggle.checked,
+.backlog-completed-sprints > .work-sprint-group .work-board-toggle.mixed {
+    background: var(--gray-300);
+    border-color: var(--gray-300);
+}
 .backlog-sprint-section-header {
     display: flex;
     align-items: center;
@@ -4369,6 +4412,17 @@ body.results-workspace-mode .workspace-body {
     transition: background 0.12s;
 }
 .backlog-sprint-section-header:hover { background: #ebecf0; }
+.backlog-sprint-section.completed {
+    opacity: 0.72;
+}
+.backlog-sprint-section.completed .backlog-sprint-section-header {
+    background: var(--gray-50);
+    border-color: var(--gray-200);
+}
+.backlog-sprint-section.completed .backlog-sprint-section-title,
+.backlog-sprint-section.completed .backlog-sprint-section-stats {
+    color: var(--gray-500);
+}
 .backlog-sprint-section.collapsed .backlog-sprint-section-header {
     border-radius: 6px;
 }
@@ -4388,8 +4442,35 @@ body.results-workspace-mode .workspace-body {
 }
 .backlog-sprint-section-areas {
     display: flex;
-    gap: 4px;
+    gap: 0.35rem;
     align-items: center;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+.backlog-sprint-area-label {
+    color: var(--gray-500);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.backlog-sprint-area-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    border: 1px solid;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+.backlog-sprint-area-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
 }
 .backlog-sprint-section-stats {
     margin-left: auto;
@@ -4404,6 +4485,12 @@ body.results-workspace-mode .workspace-body {
     border-radius: 2px;
     overflow: hidden;
     flex-shrink: 0;
+}
+.backlog-sprint-section-prog > div {
+    background: var(--primary-color);
+}
+.backlog-sprint-section.completed .backlog-sprint-section-prog > div {
+    background: var(--success-color);
 }
 /* KRs dentro do grupo de sprint — sem border-radius no topo */
 .backlog-sprint-section > .work-sprint-group {
