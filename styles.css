@@ -3491,6 +3491,145 @@ body {
     flex-shrink: 0;
 }
 
+.jira-ms-search {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-width: 220px;
+    max-width: 320px;
+}
+
+.jira-ms-search-icon {
+    position: absolute;
+    left: 9px;
+    color: var(--gray-400);
+    font-size: 0.72rem;
+    pointer-events: none;
+}
+
+.jira-ms-search-input {
+    width: 100%;
+    height: 28px;
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    background: white;
+    color: var(--gray-700);
+    font: inherit;
+    font-size: 0.76rem;
+    padding: 4px 10px 4px 28px;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.jira-ms-search-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(99,102,241,0.12);
+}
+
+.jira-ms-suggestions {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: min(360px, 80vw);
+    max-height: 260px;
+    overflow-y: auto;
+    z-index: 40;
+    padding: 4px;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    background: white;
+    box-shadow: var(--shadow-lg);
+}
+
+.jira-ms-suggestion {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.45rem 0.55rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--gray-700);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+}
+
+.jira-ms-suggestion:hover {
+    background: var(--gray-100);
+}
+
+.jira-ms-suggestion.empty {
+    cursor: default;
+    color: var(--gray-500);
+    font-size: 0.76rem;
+}
+
+.jira-ms-suggestion.empty:hover {
+    background: transparent;
+}
+
+.jira-ms-suggestion-icon {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    background: var(--gray-100);
+}
+
+.jira-ms-suggestion-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.jira-ms-suggestion-title {
+    color: var(--gray-800);
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.jira-ms-suggestion-meta {
+    color: var(--gray-500);
+    font-size: 0.7rem;
+}
+
+.jira-ms-selected {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 28px;
+    max-width: 280px;
+    border: 1px solid rgba(99,102,241,0.28);
+    border-radius: 6px;
+    background: rgba(99,102,241,0.08);
+    color: var(--primary-color);
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+
+.jira-ms-selected:hover {
+    background: rgba(99,102,241,0.14);
+}
+
+.jira-ms-selected-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .jira-sprint-body { background: white; }
 
 /* Linha de tarefa no backlog */
@@ -3506,6 +3645,43 @@ body {
 }
 .jira-sprint-task-row:last-child { border-bottom: none; }
 .jira-sprint-task-row:hover { background: var(--gray-50); }
+.jira-sprint-task-row.board-selected { background: rgba(99,102,241,0.04); }
+.jira-board-toggle {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid var(--gray-300);
+    background: white;
+    color: var(--gray-400);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 0.62rem;
+    transition: all 0.13s;
+    font-family: inherit;
+}
+.jira-board-toggle:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background: rgba(99,102,241,0.06);
+}
+.jira-board-toggle.checked,
+.jira-board-toggle.mixed {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: white;
+}
+.jira-board-toggle.task {
+    width: 20px;
+    height: 20px;
+    font-size: 0.58rem;
+}
+.jira-board-selected-count {
+    color: var(--primary-color);
+    font-weight: 600;
+}
 .jira-task-status-dot {
     width: 10px; height: 10px;
     border-radius: 2px;
@@ -3610,6 +3786,12 @@ body {
 .kcard-title { font-size: 0.8rem; font-weight: 500; color: var(--gray-800); line-height: 1.45; margin-bottom: 0.5rem; }
 .kcard-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; }
 .kcard-days { margin-left: auto; font-size: 0.68rem; color: var(--gray-400); }
+.kcard-context {
+    margin-top: 0.4rem;
+    font-size: 0.68rem;
+    color: var(--gray-400);
+    line-height: 1.35;
+}
 .kcard-actions { display: none; gap: 0.3rem; margin-top: 0.5rem; }
 .kcard:hover .kcard-actions { display: flex; }
 .kbtn-move {
@@ -3634,6 +3816,147 @@ body {
     transition: border-color 0.15s;
 }
 .kanban-select:focus { outline: none; border-color: var(--primary-color); }
+
+/* ── Toggle de agrupamento do backlog ── */
+.backlog-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 1rem;
+}
+.backlog-group-toggle button {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--gray-200);
+    background: var(--gray-50);
+    color: var(--gray-500);
+    cursor: pointer;
+    transition: all 0.13s;
+}
+.backlog-group-toggle button:hover {
+    background: var(--gray-100);
+    color: var(--gray-700);
+}
+.backlog-group-toggle button.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+/* ── Badge de número de sprint inline no KR ── */
+.jira-sprint-num-badge {
+    font-size: 0.67rem;
+    font-weight: 700;
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+}
+
+/* ── Estado "aberto no board" de um KR no backlog ── */
+.jira-sprint-group.board-active {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(99,102,241,0.12);
+}
+.jira-sprint-open-board.board-btn-active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+/* ── Seção de sprint no modo "Por Sprint" ── */
+.backlog-sprint-section {
+    margin-bottom: 1.5rem;
+}
+.backlog-sprint-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s;
+}
+.backlog-sprint-section-header:hover { background: var(--gray-200); }
+.backlog-sprint-section.collapsed .backlog-sprint-section-header {
+    border-radius: 8px;
+}
+.backlog-sprint-section.collapsed > .jira-sprint-group { display: none; }
+.backlog-sprint-chevron {
+    font-size: 0.68rem;
+    color: var(--gray-400);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+.backlog-sprint-section.collapsed .backlog-sprint-chevron { transform: rotate(-90deg); }
+.backlog-sprint-section-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--gray-700);
+    letter-spacing: 0.01em;
+}
+.backlog-sprint-section-areas {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.backlog-sprint-section-stats {
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: var(--gray-500);
+    font-weight: 500;
+}
+.backlog-sprint-section-prog {
+    width: 60px;
+    height: 4px;
+    background: var(--gray-200);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+/* KRs dentro do grupo de sprint — sem border-radius no topo */
+.backlog-sprint-section > .jira-sprint-group {
+    border-radius: 0 0 0 0;
+    border-top: none;
+    margin-bottom: 0;
+}
+.backlog-sprint-section > .jira-sprint-group:last-child {
+    border-radius: 0 0 8px 8px;
+    margin-bottom: 0;
+}
+
+/* ── Botão ghost mini (breadcrumb do board) ── */
+.btn-xs {
+    font-size: 0.72rem;
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.12s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+}
+.btn-ghost {
+    background: transparent;
+    border: 1px solid var(--gray-200);
+    color: var(--gray-500);
+}
+.btn-ghost:hover {
+    background: var(--gray-100);
+    color: var(--gray-700);
+}
 
 @media (max-width: 900px) {
     .jira-tabs-bar { padding: 0 0.5rem; }

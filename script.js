@@ -6,6 +6,7 @@
 // Estado da aplicação
 let currentFile = null;
 let analysisResult = null;
+let jiraMilestoneOutsideClickHandler = null;
 
 // Configuração de equipe (sliders) — persiste entre re-renders
 let teamConfig = { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 };
@@ -2383,6 +2384,20 @@ function assignSprintPoints(objectives, totalMonths) {
         obj._durationMonths = Math.max(1, Math.ceil(totalWeeks / 4.33));
     });
 
+    // ── Fase 1b: atribuir sprintNumber sequencial por área ───────
+    const sprintCounterByArea = {};
+    // Ordena objectives por startMonth para numerar sprints em ordem cronológica
+    const sorted = [...objectives].sort((a, b) => (a.startMonth||0) - (b.startMonth||0));
+    sorted.forEach(obj => {
+        const area = obj.area || 'generic';
+        if (!sprintCounterByArea[area]) sprintCounterByArea[area] = 0;
+        (obj.keyResults || []).forEach(kr => {
+            sprintCounterByArea[area]++;
+            kr.sprintNumber = sprintCounterByArea[area];
+            kr.areaLabel    = obj.area;
+        });
+    });
+
     // ── Fase 2: redistribuir objetivos ao longo de tMonths ───────
     // Se todos os endMonth ficaram ≤ 12 mas o projeto tem mais meses,
     // redistribuímos os objetivos proporcionalmente pela duração real.
@@ -2747,7 +2762,8 @@ Marcos são momentos chave onde há uma entrega concreta e demonstrável — com
 Devem ser distribuídos ao longo de todo o desenvolvimento.
 
 Cada marco deve ter:
-- Nome claro (ex: "Prototype Jogável", "Alpha Interna", "Beta Fechada", "Gold Master")
+- Nome claro, exibível e orientado a produção. Prefira títulos como "Protótipo Jogável", "Vertical Slice", "Alpha Interna", "Beta Fechada", "Gold Master", "Demo Pública" e "Release".
+- O id deve continuar técnico e curto (m1, m2, m3), mas NUNCA use o id como title.
 - Mês em que acontece
 - O que está pronto naquele ponto (entregáveis concretos)
 - Critérios de aceite objetivos (como saber que está pronto)
@@ -4483,12 +4499,14 @@ function saveCurrentProject() {
 
     // Captura o progresso de tarefas marcadas pelo usuário
     const taskProgress = captureTaskProgress();
+    const boardSelection = captureBoardSelection();
 
     const projectData = {
         analysisResult: JSON.parse(JSON.stringify(analysisResult)), // deep clone
         teamConfig: { ...teamConfig },
         scheduledResult: scheduledResult ? JSON.parse(JSON.stringify(scheduledResult)) : null,
         taskProgress,
+        boardSelection,
         savedAt: Date.now(),
         version: '1.0'
     };
@@ -4528,6 +4546,7 @@ function loadProject(projectId) {
     if (!project) { showNotification('Projeto não encontrado.', 'error'); return; }
 
     const data = project.data;
+    setActiveProjectId(projectId);
 
     // Restaura estado
     analysisResult = data.analysisResult;
@@ -4539,9 +4558,9 @@ function loadProject(projectId) {
     if (data.taskProgress) {
         restoreTaskProgress(data.taskProgress);
     }
+    restoreBoardSelection(data.boardSelection || {});
 
     // Mostra resultados
-    setActiveProjectId(projectId);
     showResults();
     renderSidebar();
     updateSaveBtn();
@@ -4598,6 +4617,10 @@ function captureTaskProgress() {
     return progress;
 }
 
+function captureBoardSelection() {
+    return { ...jiraBoardSelections };
+}
+
 // Aplica o progresso de tarefas salvo restaurando no localStorage (loadTaskStates() vai buscar de lá)
 function restoreTaskProgress(progress) {
     if (!progress) return;
@@ -4605,6 +4628,11 @@ function restoreTaskProgress(progress) {
     for (const [key, completed] of Object.entries(progress)) {
         try { (window.localStorage || window.sessionStorage).setItem(key, completed.toString()); } catch {}
     }
+}
+
+function restoreBoardSelection(selection) {
+    jiraBoardSelections = selection ? { ...selection } : {};
+    jiraSaveBoardSelections();
 }
 
 // Gera uma chave estável para uma tarefa (não usada internamente, mas mantida para compatibilidade)
@@ -4729,6 +4757,8 @@ document.addEventListener('DOMContentLoaded', () => {
             setActiveProjectId(null);
             analysisResult = null;
             scheduledResult = null;
+            jiraBoardSelections = {};
+            jiraSaveBoardSelections();
             Object.assign(teamConfig, { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 });
             resetToUpload();
             closeSidebar();
@@ -4823,6 +4853,7 @@ function handleImportedJson(json, filename) {
     let analysisData = null;
     let teamData = null;
     let taskProgressData = null;
+    let boardSelectionData = null;
     let projectName = filename.replace(/\.json$/i, '');
 
     // Formato B: projeto salvo pelo sistema de projetos
@@ -4831,6 +4862,7 @@ function handleImportedJson(json, filename) {
         analysisData = json.data.analysisResult;
         teamData = json.data.teamConfig || null;
         taskProgressData = json.data.taskProgress || null;
+        boardSelectionData = json.data.boardSelection || null;
         projectName = json.name || projectName;
     }
     // Formato A: export do Producer (tem "metadata" e "objectives" mas sem overview direto às vezes)
@@ -4889,7 +4921,7 @@ function handleImportedJson(json, filename) {
     document.getElementById('importModalWarning').textContent = warning;
 
     // Guarda dados para confirmar
-    _pendingImportData = { analysisData, teamData, taskProgressData, projectName: title };
+    _pendingImportData = { analysisData, teamData, taskProgressData, boardSelectionData, projectName: title };
 
     document.getElementById('importConfirmBtn').onclick = confirmImport;
     document.getElementById('importModalOverlay').classList.add('active');
@@ -4897,17 +4929,19 @@ function handleImportedJson(json, filename) {
 
 function confirmImport() {
     if (!_pendingImportData) return;
-    const { analysisData, teamData, taskProgressData, projectName } = _pendingImportData;
+    const { analysisData, teamData, taskProgressData, boardSelectionData, projectName } = _pendingImportData;
 
     // Aplica ao estado global
     analysisResult = analysisData;
     if (teamData) Object.assign(teamConfig, teamData);
 
-    // Aplica progresso de tarefas se existir
-    if (taskProgressData) restoreTaskProgress(taskProgressData);
-
     // Desvincula de projeto ativo (é um import novo)
     setActiveProjectId(null);
+
+    // Aplica progresso e seleção de board se existirem
+    if (taskProgressData) restoreTaskProgress(taskProgressData);
+    restoreBoardSelection(boardSelectionData || {});
+
     updateSaveBtn();
 
     closeImportModal();
@@ -4994,10 +5028,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let jiraSelectedRoles = new Set(['programming', 'art', 'design', 'audio', 'qa']);
 let jiraSelectedMilestone = null; // null = todos; string = id do marco filtrado
-let jiraCurrentSprint = null;
+let backlogGroupMode = 'sprint'; // 'sprint' = agrupado por sprint | 'task' = agrupado por KR/área
 let kanbanDraggedTaskId = null;
 let kanbanDraggedFromCol = null;
 let kanbanTaskStates = {};
+let jiraBoardSelections = {};
 
 const ALL_ROLES = ['programming', 'art', 'design', 'audio', 'qa'];
 const ROLE_LABELS = { programming:'Programador', art:'Artista', design:'Designer', audio:'Áudio', qa:'QA' };
@@ -5007,6 +5042,10 @@ function kanbanStatesKey() {
     const id = getActiveProjectId();
     return id ? `kanban_states_${id}` : 'kanban_states_default';
 }
+function jiraBoardSelectionsKey() {
+    const id = getActiveProjectId();
+    return id ? `jira_board_selection_${id}` : 'jira_board_selection_default';
+}
 function kanbanLoadStates() {
     try { kanbanTaskStates = JSON.parse(localStorage.getItem(kanbanStatesKey()) || '{}'); }
     catch { kanbanTaskStates = {}; }
@@ -5014,13 +5053,104 @@ function kanbanLoadStates() {
 function kanbanSaveStates() {
     try { localStorage.setItem(kanbanStatesKey(), JSON.stringify(kanbanTaskStates)); } catch {}
 }
+function jiraLoadBoardSelections() {
+    try { jiraBoardSelections = JSON.parse(localStorage.getItem(jiraBoardSelectionsKey()) || '{}'); }
+    catch { jiraBoardSelections = {}; }
+}
+function jiraSaveBoardSelections() {
+    try { localStorage.setItem(jiraBoardSelectionsKey(), JSON.stringify(jiraBoardSelections)); } catch {}
+    try {
+        const activeId = getActiveProjectId();
+        if (!activeId) return;
+        const projects = getAllProjects();
+        if (!projects[activeId]?.data) return;
+        projects[activeId].data.boardSelection = { ...jiraBoardSelections };
+        saveAllProjects(projects);
+    } catch {}
+}
+function jiraTaskKey(objId, krId, taskId) {
+    return `${objId}__${krId}__${taskId}`;
+}
+function jiraIsBoardTaskSelected(objId, krId, taskId) {
+    return !!jiraBoardSelections[jiraTaskKey(objId, krId, taskId)];
+}
+function jiraTaskKanbanState(ref) {
+    if (!ref) return null;
+    return kanbanTaskStates[ref.key] || kanbanTaskStates[ref.task.id] || null;
+}
+function jiraSetTaskDone(ref, done) {
+    if (!ref) return;
+    try { localStorage.setItem(`task_${ref.obj.id}_${ref.kr.id}_${ref.task.id}`, done ? 'true' : 'false'); } catch {}
+}
+function jiraGetBoardTaskRefs() {
+    const refs = [];
+    const objList = (scheduledResult || analysisResult)?.objectives || [];
+    objList.forEach(obj => {
+        (obj.keyResults || []).forEach(kr => {
+            (kr.tasks || []).forEach(task => {
+                const key = jiraTaskKey(obj.id, kr.id, task.id);
+                if (jiraBoardSelections[key]) refs.push({ key, obj, kr, task });
+            });
+        });
+    });
+    return refs;
+}
+function jiraFindBoardTaskRef(taskKey) {
+    return jiraGetBoardTaskRefs().find(ref => ref.key === taskKey || ref.task.id === taskKey) || null;
+}
+function jiraSetBoardTask(objId, krId, taskId, selected) {
+    const key = jiraTaskKey(objId, krId, taskId);
+    if (selected) jiraBoardSelections[key] = true;
+    else {
+        delete jiraBoardSelections[key];
+        delete kanbanTaskStates[key];
+    }
+}
+function jiraSetBoardTasks(refs, selected) {
+    refs.forEach(ref => jiraSetBoardTask(ref.obj.id, ref.kr.id, ref.task.id, selected));
+    jiraSaveBoardSelections();
+    kanbanSaveStates();
+}
+function jiraToggleBoardTask(e, objId, krId, taskId) {
+    if (e) e.stopPropagation();
+    jiraSetBoardTask(objId, krId, taskId, !jiraIsBoardTaskSelected(objId, krId, taskId));
+    jiraSaveBoardSelections();
+    jiraRefreshCurrentView();
+}
+function jiraToggleBoardKr(e, objId, krId) {
+    if (e) e.stopPropagation();
+    const obj = ((scheduledResult || analysisResult)?.objectives || []).find(o => o.id === objId);
+    const kr = obj?.keyResults?.find(k => k.id === krId);
+    if (!obj || !kr) return;
+    const refs = (kr.tasks || []).map(task => ({ obj, kr, task }));
+    const allSelected = refs.length > 0 && refs.every(ref => jiraIsBoardTaskSelected(obj.id, kr.id, ref.task.id));
+    jiraSetBoardTasks(refs, !allSelected);
+    jiraRefreshCurrentView();
+}
+function jiraToggleBoardSprint(e) {
+    if (e) e.stopPropagation();
+    const section = e?.currentTarget?.closest('.backlog-sprint-section');
+    const taskRows = [...(section?.querySelectorAll('[data-board-task-key]') || [])];
+    const refs = taskRows.map(row => {
+        const { obj: objId, kr: krId, task: taskId } = row.dataset;
+        const obj = ((scheduledResult || analysisResult)?.objectives || []).find(o => o.id === objId);
+        const kr = obj?.keyResults?.find(k => k.id === krId);
+        const task = kr?.tasks?.find(t => t.id === taskId);
+        return obj && kr && task ? { obj, kr, task } : null;
+    }).filter(Boolean);
+    const allSelected = refs.length > 0 && refs.every(ref => jiraIsBoardTaskSelected(ref.obj.id, ref.kr.id, ref.task.id));
+    jiraSetBoardTasks(refs, !allSelected);
+    jiraRefreshCurrentView();
+}
 
 // ── Init ──────────────────────────────────────────────────────
 function jiraInit() {
     if (!analysisResult) return;
     kanbanLoadStates();
+    jiraLoadBoardSelections();
     jiraSelectedRoles = new Set(ALL_ROLES);
     jiraSelectedMilestone = null;
+    backlogGroupMode = 'sprint';
     jiraUpdateAvatarUI();
     jiraSetView('backlog');
 }
@@ -5051,8 +5181,7 @@ function jiraSetView(view) {
         if (sprintBar) sprintBar.style.display = 'flex';
         if (msFiltersBar) msFiltersBar.style.display = 'none';
         if (barDivider)   barDivider.style.display   = 'none';
-        jiraPopulateBoardSprints();
-        if (jiraCurrentSprint) jiraRenderBoard();
+        jiraRenderBoard();
     }
 }
 
@@ -5091,6 +5220,53 @@ function jiraUpdateAvatarUI() {
     if (allBtn)   allBtn.style.display   = allSelected ? '' : 'none';
 }
 
+function jiraSortMilestonesForFilter(milestones) {
+    return (milestones || []).slice().sort((a, b) => {
+        const monthA = Number(a.month) || 0;
+        const monthB = Number(b.month) || 0;
+        if (monthA !== monthB) return monthA - monthB;
+        return String(a.id || '').localeCompare(String(b.id || ''), 'pt-BR');
+    });
+}
+
+function jiraNormalizeMilestoneText(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
+function jiraFilterMilestoneOptions(milestones, query) {
+    const sorted = jiraSortMilestonesForFilter(milestones);
+    const normalizedQuery = jiraNormalizeMilestoneText(query);
+    if (!normalizedQuery) return sorted;
+
+    return sorted.filter(ms => {
+        const month = Number(ms.month) || '';
+        const corpus = [
+            ms.title,
+            ms.type,
+            ms.id,
+            month ? `mes ${month}` : '',
+            month ? `mês ${month}` : '',
+            month ? `m${month}` : '',
+        ].map(jiraNormalizeMilestoneText).join(' ');
+
+        return corpus.includes(normalizedQuery);
+    });
+}
+
+function jiraGetMilestoneQuickLabel(milestone) {
+    return milestone?.title ? `Primeiro marco: ${milestone.title}` : 'Primeiro marco';
+}
+
+function jiraGetMilestoneSelectedLabel(milestone) {
+    if (!milestone) return '';
+    const month = Number(milestone.month) || '';
+    return month ? `${milestone.title} · Mês ${month}` : milestone.title;
+}
+
 // ── Filtro de marco ───────────────────────────────────────────
 function jiraSetMilestoneFilter(msId) {
     jiraSelectedMilestone = (jiraSelectedMilestone === msId) ? null : msId;
@@ -5102,6 +5278,14 @@ function jiraUpdateMilestoneFilterUI() {
     document.querySelectorAll('.jira-ms-chip').forEach(chip => {
         chip.classList.toggle('active', chip.dataset.msId === jiraSelectedMilestone);
     });
+    const milestones = jiraSortMilestonesForFilter(analysisResult?.milestones || []);
+    const selected = milestones.find(ms => ms.id === jiraSelectedMilestone);
+    const selectedPill = document.getElementById('jiraMilestoneSelectedPill');
+    if (selectedPill) {
+        selectedPill.style.display = selected ? '' : 'none';
+        const label = selectedPill.querySelector('.jira-ms-selected-label');
+        if (label) label.textContent = jiraGetMilestoneSelectedLabel(selected);
+    }
 }
 
 function jiraRenderMilestoneFilters() {
@@ -5110,7 +5294,7 @@ function jiraRenderMilestoneFilters() {
     if (!bar || !analysisResult) return;
     bar.innerHTML = '';
 
-    const milestones = (analysisResult.milestones || []).slice().sort((a, b) => a.month - b.month);
+    const milestones = jiraSortMilestonesForFilter(analysisResult.milestones || []);
     if (milestones.length === 0) {
         bar.style.display = 'none';
         if (divider) divider.style.display = 'none';
@@ -5119,7 +5303,7 @@ function jiraRenderMilestoneFilters() {
     bar.style.display = '';
     if (divider) divider.style.display = '';
 
-    const typeIcons = { vertical_slice:'🔬', alpha:'⚡', beta:'🧪', gold:'🏆', release:'🚀', prototype:'🔬', demo:'🎬' };
+    const typeIcons = { vertical_slice:'🎮', alpha:'⚡', beta:'🧪', gold:'🏆', release:'🚀', prototype:'🔬', demo:'🎬' };
 
     // Quick filter — primeiro marco
     const firstMs  = milestones[0];
@@ -5127,7 +5311,7 @@ function jiraRenderMilestoneFilters() {
     quickBtn.className = 'jira-ms-chip quick';
     quickBtn.dataset.msId = firstMs.id;
     quickBtn.title = `Filtrar: ${firstMs.title}`;
-    quickBtn.innerHTML = '<i class="fas fa-bolt"></i> Próximo Marco';
+    quickBtn.innerHTML = `<i class="fas fa-bolt"></i> ${jiraGetMilestoneQuickLabel(firstMs)}`;
     quickBtn.onclick = () => jiraSetMilestoneFilter(firstMs.id);
     bar.appendChild(quickBtn);
 
@@ -5135,15 +5319,95 @@ function jiraRenderMilestoneFilters() {
     sep.className = 'jira-chip-sep';
     bar.appendChild(sep);
 
-    milestones.forEach(ms => {
-        const chip = document.createElement('button');
-        chip.className = 'jira-ms-chip';
-        chip.dataset.msId = ms.id;
-        chip.title = ms.title;
-        chip.innerHTML = `${typeIcons[ms.type] || '📍'} M${ms.month}`;
-        chip.onclick = () => jiraSetMilestoneFilter(ms.id);
-        bar.appendChild(chip);
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'jira-ms-search';
+    searchWrap.innerHTML = `
+        <i class="fas fa-search jira-ms-search-icon"></i>
+        <input type="search" class="jira-ms-search-input" placeholder="Filtrar por marco" aria-label="Filtrar por marco">
+        <div class="jira-ms-suggestions" role="listbox" hidden></div>
+    `;
+    const input = searchWrap.querySelector('.jira-ms-search-input');
+    const suggestions = searchWrap.querySelector('.jira-ms-suggestions');
+
+    function hideSuggestions() {
+        suggestions.hidden = true;
+        suggestions.innerHTML = '';
+    }
+
+    function selectMilestone(ms) {
+        jiraSetMilestoneFilter(ms.id);
+        input.value = '';
+        hideSuggestions();
+    }
+
+    function renderSuggestions() {
+        const matches = jiraFilterMilestoneOptions(milestones, input.value).slice(0, 8);
+        suggestions.innerHTML = '';
+        if (matches.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'jira-ms-suggestion empty';
+            empty.textContent = 'Nenhum marco encontrado';
+            suggestions.appendChild(empty);
+            suggestions.hidden = false;
+            return;
+        }
+
+        matches.forEach(ms => {
+            const option = document.createElement('button');
+            option.type = 'button';
+            option.className = 'jira-ms-suggestion';
+            option.dataset.msId = ms.id;
+            option.innerHTML = `
+                <span class="jira-ms-suggestion-icon">${typeIcons[ms.type] || '📍'}</span>
+                <span class="jira-ms-suggestion-main">
+                    <span class="jira-ms-suggestion-title">${ms.title}</span>
+                    <span class="jira-ms-suggestion-meta">Mês ${ms.month || '—'} · ${ms.type || ms.id}</span>
+                </span>
+            `;
+            option.addEventListener('mousedown', e => e.preventDefault());
+            option.addEventListener('click', () => selectMilestone(ms));
+            suggestions.appendChild(option);
+        });
+        suggestions.hidden = false;
+    }
+
+    input.addEventListener('input', renderSuggestions);
+    input.addEventListener('focus', renderSuggestions);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            hideSuggestions();
+            input.blur();
+        }
+        if (e.key === 'Enter') {
+            const firstMatch = jiraFilterMilestoneOptions(milestones, input.value)[0];
+            if (firstMatch) {
+                e.preventDefault();
+                selectMilestone(firstMatch);
+            }
+        }
     });
+    bar.appendChild(searchWrap);
+
+    const selectedPill = document.createElement('button');
+    selectedPill.type = 'button';
+    selectedPill.id = 'jiraMilestoneSelectedPill';
+    selectedPill.className = 'jira-ms-selected';
+    selectedPill.innerHTML = `
+        <i class="fas fa-flag"></i>
+        <span class="jira-ms-selected-label"></span>
+        <i class="fas fa-times"></i>
+    `;
+    selectedPill.title = 'Limpar filtro de marco';
+    selectedPill.onclick = () => jiraSetMilestoneFilter(jiraSelectedMilestone);
+    bar.appendChild(selectedPill);
+
+    if (jiraMilestoneOutsideClickHandler) {
+        document.removeEventListener('mousedown', jiraMilestoneOutsideClickHandler);
+    }
+    jiraMilestoneOutsideClickHandler = event => {
+        if (!bar.contains(event.target)) hideSuggestions();
+    };
+    document.addEventListener('mousedown', jiraMilestoneOutsideClickHandler);
 
     jiraUpdateMilestoneFilterUI();
 }
@@ -5151,23 +5415,38 @@ function jiraRenderMilestoneFilters() {
 function jiraRefreshCurrentView() {
     const boardVisible = document.getElementById('jiraBoardView')?.style.display !== 'none';
     if (boardVisible) {
-        jiraPopulateBoardSprints();
-        if (jiraCurrentSprint && !jiraSelectedRoles.has(jiraCurrentSprint.obj.area)) {
-            jiraCurrentSprint = null;
-            jiraHideBoard();
-        } else if (jiraCurrentSprint) {
-            jiraRenderBoard();
-        }
+        jiraRenderBoard();
     } else {
         jiraRenderBacklog();
     }
 }
 
 // ── BACKLOG ───────────────────────────────────────────────────
+function jiraSetGroupMode(mode) {
+    backlogGroupMode = mode;
+    document.querySelectorAll('.backlog-group-toggle button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    jiraRenderBacklog();
+}
+
 function jiraRenderBacklog() {
     const container = document.getElementById('jiraBacklogSprints');
     if (!container || !analysisResult) return;
     container.innerHTML = '';
+
+    // Toggle de agrupamento
+    const toggleBar = document.createElement('div');
+    toggleBar.className = 'backlog-group-toggle';
+    toggleBar.innerHTML = `
+        <button data-mode="sprint" class="${backlogGroupMode === 'sprint' ? 'active' : ''}" onclick="jiraSetGroupMode('sprint')">
+            <i class="fas fa-layer-group"></i> Por Sprint
+        </button>
+        <button data-mode="task" class="${backlogGroupMode === 'task' ? 'active' : ''}" onclick="jiraSetGroupMode('task')">
+            <i class="fas fa-tasks"></i> Por Tarefa
+        </button>
+    `;
+    container.appendChild(toggleBar);
 
     jiraRenderMilestoneFilters();
 
@@ -5202,7 +5481,10 @@ function jiraRenderBacklog() {
     });
 
     if (allItems.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--gray-400)">Nenhuma tarefa para os filtros selecionados.</div>';
+        const empty = document.createElement('div');
+        empty.style.cssText = 'text-align:center;padding:3rem;color:var(--gray-400)';
+        empty.textContent = 'Nenhuma tarefa para os filtros selecionados.';
+        container.appendChild(empty);
         return;
     }
 
@@ -5210,53 +5492,53 @@ function jiraRenderBacklog() {
         const tasks = kr.tasks || [];
         if (!tasks.length) return 0;
         const done = tasks.filter(t => {
-            if (kanbanTaskStates[t.id] === 'done') return true;
+            if (jiraTaskKanbanState({ key: jiraTaskKey(obj.id, kr.id, t.id), task: t }) === 'done') return true;
             try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; }
         }).length;
         return Math.round(done / tasks.length * 100);
     }
 
-    // Ordena: incompletas primeiro, depois por ordem de marco, depois por role
-    allItems.sort((a, b) => {
-        const pa = sprintPct(a), pb = sprintPct(b);
-        if ((pa === 100) !== (pb === 100)) return pa === 100 ? 1 : -1;
-        if (a.ms.month !== b.ms.month) return a.ms.month - b.ms.month;
-        return ALL_ROLES.indexOf(a.obj.area) - ALL_ROLES.indexOf(b.obj.area);
-    });
-
-    allItems.forEach(({ obj, kr, ms }, idx) => {
+    function renderKrGroup(item, idx, extraLabel) {
+        const { obj, kr, ms } = item;
         const role  = obj.area;
         const color = areaColors[role] || '#6366f1';
         const tasks = kr.tasks || [];
         const doneCount = tasks.filter(t => {
-            if (kanbanTaskStates[t.id] === 'done') return true;
+            if (jiraTaskKanbanState({ key: jiraTaskKey(obj.id, kr.id, t.id), task: t }) === 'done') return true;
             try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; }
         }).length;
         const pct = tasks.length > 0 ? Math.round(doneCount / tasks.length * 100) : 0;
+        const selectedCount = tasks.filter(t => jiraIsBoardTaskSelected(obj.id, kr.id, t.id)).length;
+        const allSelected = tasks.length > 0 && selectedCount === tasks.length;
+        const someSelected = selectedCount > 0 && !allSelected;
 
         const sprintGroup = document.createElement('div');
-        sprintGroup.className = `jira-sprint-group${idx === 0 ? '' : ' collapsed'}${pct === 100 ? ' done' : ''}`;
+        sprintGroup.className = `jira-sprint-group${idx === 0 ? '' : ' collapsed'}${pct === 100 ? ' done' : ''}${selectedCount > 0 ? ' board-active' : ''}`;
 
         const sprintHdr = document.createElement('div');
         sprintHdr.className = 'jira-sprint-header';
         sprintHdr.innerHTML = `
+            <button class="jira-board-toggle ${allSelected ? 'checked' : ''} ${someSelected ? 'mixed' : ''}"
+                    onclick="jiraToggleBoardKr(event,'${obj.id}','${kr.id}')"
+                    title="${allSelected ? 'Remover tarefas do board' : 'Adicionar tarefas ao board'}">
+                <i class="fas ${allSelected ? 'fa-check' : someSelected ? 'fa-minus' : 'fa-plus'}"></i>
+            </button>
             <i class="fas fa-chevron-down jira-sprint-chevron"></i>
             <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
+            ${extraLabel ? `<span class="jira-sprint-num-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${extraLabel}</span>` : ''}
             <span class="jira-sprint-name" style="font-weight:500;font-size:.84rem">${kr.title}</span>
             <span class="sprint-milestone-tag" title="${ms.title}" data-ms-id="${ms.id}"
                   onclick="jiraSetMilestoneFilter('${ms.id}');event.stopPropagation()">
                 ${typeIcons[ms.type]||'📍'} M${ms.month}
             </span>
             <span class="jira-sprint-meta">
+                <span class="jira-board-selected-count">${selectedCount} no board</span>
                 <span class="jira-sprint-count">${doneCount}/${tasks.length}</span>
                 ${pct === 100 ? '<span style="color:var(--success-color);font-size:.7rem;font-weight:600">✓</span>' : ''}
             </span>
-            <button class="jira-sprint-open-board" onclick="jiraOpenBoard(event,'${obj.id}','${kr.id}')">
-                <i class="fas fa-columns"></i> Board
-            </button>
         `;
         sprintHdr.onclick = (e) => {
-            if (e.target.closest('.jira-sprint-open-board') || e.target.closest('.sprint-milestone-tag')) return;
+            if (e.target.closest('.jira-board-toggle') || e.target.closest('.sprint-milestone-tag')) return;
             sprintGroup.classList.toggle('collapsed');
         };
         sprintGroup.appendChild(sprintHdr);
@@ -5264,14 +5546,25 @@ function jiraRenderBacklog() {
         const taskList = document.createElement('div');
         taskList.className = 'jira-sprint-body';
         tasks.forEach((t, ti) => {
-            const ks = kanbanTaskStates[t.id];
+            const taskKey = jiraTaskKey(obj.id, kr.id, t.id);
+            const ks = jiraTaskKanbanState({ key: taskKey, task: t });
             const lk = `task_${obj.id}_${kr.id}_${t.id}`;
             const isDone  = ks === 'done' || (() => { try { return localStorage.getItem(lk) === 'true'; } catch { return false; } })();
             const isDoing = ks === 'doing';
+            const isSelected = jiraIsBoardTaskSelected(obj.id, kr.id, t.id);
             const sCls = isDone ? 'jira-task-status-done' : isDoing ? 'jira-task-status-doing' : 'jira-task-status-todo';
             const row = document.createElement('div');
-            row.className = `jira-sprint-task-row ${sCls}`;
+            row.className = `jira-sprint-task-row ${sCls}${isSelected ? ' board-selected' : ''}`;
+            row.dataset.boardTaskKey = taskKey;
+            row.dataset.obj = obj.id;
+            row.dataset.kr = kr.id;
+            row.dataset.task = t.id;
             row.innerHTML = `
+                <button class="jira-board-toggle task ${isSelected ? 'checked' : ''}"
+                        onclick="jiraToggleBoardTask(event,'${obj.id}','${kr.id}','${t.id}')"
+                        title="${isSelected ? 'Remover do board' : 'Adicionar ao board'}">
+                    <i class="fas ${isSelected ? 'fa-check' : 'fa-plus'}"></i>
+                </button>
                 <div class="jira-task-status-dot"></div>
                 <span class="jira-task-id" style="color:${color}">${role.substring(0,3).toUpperCase()}-${ti+1}</span>
                 <span class="jira-task-title ${isDone?'done-title':''}">${t.title}</span>
@@ -5281,8 +5574,94 @@ function jiraRenderBacklog() {
             taskList.appendChild(row);
         });
         sprintGroup.appendChild(taskList);
-        container.appendChild(sprintGroup);
-    });
+        return sprintGroup;
+    }
+
+    if (backlogGroupMode === 'task') {
+        // ── Modo "Por Tarefa": agrupa por área/objetivo (comportamento original) ──
+        allItems.sort((a, b) => {
+            const pa = sprintPct(a), pb = sprintPct(b);
+            if ((pa === 100) !== (pb === 100)) return pa === 100 ? 1 : -1;
+            if (a.ms.month !== b.ms.month) return a.ms.month - b.ms.month;
+            return ALL_ROLES.indexOf(a.obj.area) - ALL_ROLES.indexOf(b.obj.area);
+        });
+        allItems.forEach((item, idx) => {
+            const label = item.kr.sprintNumber ? `Sprint ${item.kr.sprintNumber}` : null;
+            container.appendChild(renderKrGroup(item, idx, label));
+        });
+
+    } else {
+        // ── Modo "Por Sprint": agrupa KRs em blocos de sprint numerada ──
+        // Coleta todos os sprint numbers presentes nos items filtrados
+        const sprintGroups = {};
+        allItems.forEach(item => {
+            const sn = item.kr.sprintNumber || 0;
+            if (!sprintGroups[sn]) sprintGroups[sn] = [];
+            sprintGroups[sn].push(item);
+        });
+
+        const sortedSprints = Object.keys(sprintGroups)
+            .map(Number)
+            .sort((a, b) => a - b);
+
+        sortedSprints.forEach((sn, groupIdx) => {
+            const items = sprintGroups[sn];
+
+            // Header do grupo de sprint
+            const groupEl = document.createElement('div');
+            groupEl.className = 'backlog-sprint-section';
+
+            // Calcula stats do grupo
+            let totalTasks = 0, totalDone = 0, totalSelected = 0;
+            items.forEach(({ obj, kr }) => {
+                (kr.tasks || []).forEach(t => {
+                    totalTasks++;
+                    const isDone = jiraTaskKanbanState({ key: jiraTaskKey(obj.id, kr.id, t.id), task: t }) === 'done' ||
+                        (() => { try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; } })();
+                    if (isDone) totalDone++;
+                    if (jiraIsBoardTaskSelected(obj.id, kr.id, t.id)) totalSelected++;
+                });
+            });
+            const groupPct = totalTasks > 0 ? Math.round(totalDone / totalTasks * 100) : 0;
+            const groupAllSelected = totalTasks > 0 && totalSelected === totalTasks;
+            const groupSomeSelected = totalSelected > 0 && !groupAllSelected;
+
+            // Quais áreas estão nessa sprint
+            const areasInSprint = [...new Set(items.map(i => i.obj.area))];
+            const areaDotsHtml = areasInSprint.map(a =>
+                `<span style="width:7px;height:7px;border-radius:50%;background:${areaColors[a]||'#999'};display:inline-block" title="${ROLE_LABELS[a]||a}"></span>`
+            ).join('');
+
+            const sprintLabel = sn > 0 ? `Sprint ${sn}` : 'Sem sprint';
+            groupEl.innerHTML = `
+                <div class="backlog-sprint-section-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                    <button class="jira-board-toggle ${groupAllSelected ? 'checked' : ''} ${groupSomeSelected ? 'mixed' : ''}"
+                            onclick="jiraToggleBoardSprint(event)"
+                            title="${groupAllSelected ? 'Remover sprint do board' : 'Adicionar sprint ao board'}">
+                        <i class="fas ${groupAllSelected ? 'fa-check' : groupSomeSelected ? 'fa-minus' : 'fa-plus'}"></i>
+                    </button>
+                    <i class="fas fa-chevron-down backlog-sprint-chevron"></i>
+                    <span class="backlog-sprint-section-title">${sprintLabel}</span>
+                    <span class="backlog-sprint-section-areas">${areaDotsHtml}</span>
+                    <span class="backlog-sprint-section-stats">${totalSelected} no board · ${totalDone}/${totalTasks} tarefas${groupPct === 100 ? ' ✓' : ''}</span>
+                    ${groupPct > 0 ? `<div class="backlog-sprint-section-prog"><div style="width:${groupPct}%;background:var(--primary-color);height:100%;border-radius:2px;transition:width .3s"></div></div>` : ''}
+                </div>
+            `;
+
+            // Sorteia KRs incompletos primeiro, depois por área
+            items.sort((a, b) => {
+                const pa = sprintPct(a), pb = sprintPct(b);
+                if ((pa === 100) !== (pb === 100)) return pa === 100 ? 1 : -1;
+                return ALL_ROLES.indexOf(a.obj.area) - ALL_ROLES.indexOf(b.obj.area);
+            });
+
+            items.forEach((item, idx) => {
+                groupEl.appendChild(renderKrGroup(item, idx, null));
+            });
+
+            container.appendChild(groupEl);
+        });
+    }
 }
 
 // ── Abre Board a partir do backlog ────────────────────────────
@@ -5292,65 +5671,13 @@ function jiraOpenBoard(e, objId, krId) {
     const obj = objList.find(o => o.id === objId);
     const kr  = obj?.keyResults?.find(k => k.id === krId);
     if (!obj || !kr) return;
-    jiraCurrentSprint = { obj, kr };
+
+    jiraSetBoardTasks((kr.tasks || []).map(task => ({ obj, kr, task })), true);
     jiraSetView('board');
-    const sel = document.getElementById('jiraBoardSprintSelect');
-    if (sel) {
-        const val = JSON.stringify({ objId, krId });
-        for (const opt of sel.options) { if (opt.value === val) { sel.value = val; break; } }
-    }
     jiraRenderBoard();
 }
 
 // ── BOARD ─────────────────────────────────────────────────────
-function jiraPopulateBoardSprints() {
-    const sel = document.getElementById('jiraBoardSprintSelect');
-    if (!sel || !analysisResult) return;
-    const prev = sel.value;
-    sel.innerHTML = '<option value="">— selecione uma sprint —</option>';
-
-    const objList    = (scheduledResult || analysisResult).objectives || [];
-    const milestones = (analysisResult.milestones || []).slice().sort((a,b) => a.month - b.month);
-    const typeIcons  = { vertical_slice:'🔬', alpha:'⚡', beta:'🧪', gold:'🏆', release:'🚀', prototype:'🔬', demo:'🎬' };
-
-    milestones.forEach((ms, msIdx) => {
-        const msEnd   = ms.month;
-        const msStart = msIdx > 0 ? milestones[msIdx-1].month : 0;
-        const group   = document.createElement('optgroup');
-        group.label   = `${typeIcons[ms.type]||'📍'} M${ms.month}: ${ms.title}`;
-        let hasItems  = false;
-
-        objList.forEach(obj => {
-            if (!jiraSelectedRoles.has(obj.area)) return;
-            const objEnd = obj.endMonth || obj.timeline?.endMonth || 0;
-            if (objEnd <= msStart || objEnd > msEnd) return;
-            (obj.keyResults || []).forEach(kr => {
-                const opt = document.createElement('option');
-                opt.value = JSON.stringify({ objId: obj.id, krId: kr.id });
-                opt.textContent = `[${obj.area}] ${kr.title} (${(kr.tasks||[]).length}t)`;
-                group.appendChild(opt);
-                hasItems = true;
-            });
-        });
-        if (hasItems) sel.appendChild(group);
-    });
-
-    if (prev) for (const opt of sel.options) { if (opt.value === prev) { sel.value = prev; break; } }
-}
-
-function jiraBoardSelectSprint(val) {
-    if (!val) { jiraHideBoard(); jiraCurrentSprint = null; return; }
-    try {
-        const { objId, krId } = JSON.parse(val);
-        const objList = (scheduledResult || analysisResult).objectives || [];
-        const obj = objList.find(o => o.id === objId);
-        const kr  = obj?.keyResults?.find(k => k.id === krId);
-        if (!obj || !kr) { jiraHideBoard(); return; }
-        jiraCurrentSprint = { obj, kr };
-        jiraRenderBoard();
-    } catch { jiraHideBoard(); }
-}
-
 function jiraHideBoard() {
     const e = document.getElementById('kanbanEmpty');
     const c = document.getElementById('kanbanCols');
@@ -5359,19 +5686,40 @@ function jiraHideBoard() {
 }
 
 function jiraRenderBoard() {
-    if (!jiraCurrentSprint) return;
-    const { obj, kr } = jiraCurrentSprint;
-    const tasks = kr.tasks || [];
+    const refs = jiraGetBoardTaskRefs();
+    const emptyEl = document.getElementById('kanbanEmpty');
+    const colsEl = document.getElementById('kanbanCols');
+    const labelEl = document.getElementById('jiraBoardActiveSprintLabel');
 
-    document.getElementById('kanbanEmpty').style.display = 'none';
-    document.getElementById('kanbanCols').style.display  = 'grid';
+    if (labelEl) {
+        labelEl.innerHTML = `<strong>${refs.length}</strong> tarefa${refs.length === 1 ? '' : 's'} selecionada${refs.length === 1 ? '' : 's'} no backlog`;
+    }
+
+    if (!refs.length) {
+        if (emptyEl) {
+            emptyEl.style.display = 'flex';
+            emptyEl.innerHTML = `
+                <i class="fas fa-columns" style="font-size:2rem;opacity:.3"></i>
+                <p>Marque tarefas no <strong>Backlog</strong> para montar o board.</p>
+            `;
+        }
+        if (colsEl) colsEl.style.display = 'none';
+        jiraRenderCol('kcards-todo',  'kcol-todo-count',  [], 'todo');
+        jiraRenderCol('kcards-doing', 'kcol-doing-count', [], 'doing');
+        jiraRenderCol('kcards-done',  'kcol-done-count',  [], 'done');
+        return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (colsEl) colsEl.style.display = 'grid';
 
     const cols = { todo:[], doing:[], done:[] };
-    tasks.forEach(t => {
-        const ks = kanbanTaskStates[t.id];
-        const lk = `task_${obj.id}_${kr.id}_${t.id}`;
+    refs.forEach(ref => {
+        const ks = jiraTaskKanbanState(ref);
+        const lk = `task_${ref.obj.id}_${ref.kr.id}_${ref.task.id}`;
         const listDone = (() => { try { return localStorage.getItem(lk)==='true'; } catch { return false; } })();
-        cols[ks || (listDone ? 'done' : 'todo')].push(t);
+        const col = ks || (listDone ? 'done' : 'todo');
+        (cols[col] || cols.todo).push(ref);
     });
 
     jiraRenderCol('kcards-todo',  'kcol-todo-count',  cols.todo,  'todo');
@@ -5393,34 +5741,40 @@ function jiraRenderCol(cardsId, countId, tasks, colName) {
         container.appendChild(empty);
         return;
     }
-    tasks.forEach(t => container.appendChild(jiraCreateCard(t, colName)));
+    tasks.forEach(ref => container.appendChild(jiraCreateCard(ref, colName)));
 }
 
-function jiraCreateCard(task, colName) {
+function jiraCreateCard(ref, colName) {
+    const { obj, kr, task, key } = ref;
     const card = document.createElement('div');
     card.className = 'kcard';
     card.draggable = true;
-    card.dataset.taskId = task.id;
+    card.dataset.taskId = key;
 
     const prevCol = colName === 'doing' ? 'todo'  : colName === 'done' ? 'doing' : null;
     const nextCol = colName === 'todo'  ? 'doing' : colName === 'doing' ? 'done' : null;
     const typeIcons = { feature:'⚙️', fix:'🐛', art:'🎨', design:'📐', audio:'🔊', test:'🧪', config:'🔧', doc:'📄' };
+    const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
+    const color = areaColors[obj.area] || '#6366f1';
+    const sprintLabel = kr.sprintNumber ? `Sprint ${kr.sprintNumber}` : 'Sem sprint';
 
     card.innerHTML = `
         <div class="kcard-title">${task.title}</div>
         <div class="kcard-meta">
+            <span class="meta-badge" style="background:${color}18;color:${color}">${sprintLabel}</span>
             <span class="meta-badge priority-${task.priority}">${task.priority}</span>
             <span class="meta-badge" style="background:var(--gray-100);color:var(--gray-500)">${typeIcons[task.type]||'📌'} ${task.type||'feature'}</span>
             <span class="kcard-days">⏱ ${task.estimatedDays||2}d</span>
         </div>
+        <div class="kcard-context">${kr.title}</div>
         <div class="kcard-actions">
-            ${prevCol ? `<button class="kbtn-move" onclick="kanbanMoveTask('${task.id}','${prevCol}',event)">${prevCol==='todo'?'← A Fazer':'← Em Prog.'}</button>` : ''}
-            ${nextCol ? `<button class="kbtn-move" onclick="kanbanMoveTask('${task.id}','${nextCol}',event)">${nextCol==='doing'?'Em Prog. →':'Concluído →'}</button>` : ''}
+            ${prevCol ? `<button class="kbtn-move" onclick="kanbanMoveTask('${key}','${prevCol}',event)">${prevCol==='todo'?'← A Fazer':'← Em Prog.'}</button>` : ''}
+            ${nextCol ? `<button class="kbtn-move" onclick="kanbanMoveTask('${key}','${nextCol}',event)">${nextCol==='doing'?'Em Prog. →':'Concluído →'}</button>` : ''}
         </div>
     `;
 
     card.addEventListener('dragstart', e => {
-        kanbanDraggedTaskId  = task.id;
+        kanbanDraggedTaskId  = key;
         kanbanDraggedFromCol = colName;
         setTimeout(() => card.classList.add('dragging'), 0);
         e.dataTransfer.effectAllowed = 'move';
@@ -5433,11 +5787,22 @@ function kanbanMoveTask(taskId, toCol, e) {
     if (e) e.stopPropagation();
     kanbanTaskStates[taskId] = toCol;
     kanbanSaveStates();
-    if (jiraCurrentSprint) {
-        const { obj, kr } = jiraCurrentSprint;
-        try { localStorage.setItem(`task_${obj.id}_${kr.id}_${taskId}`, toCol==='done'?'true':'false'); } catch {}
+    const movedRef = jiraFindBoardTaskRef(taskId);
+    jiraSetTaskDone(movedRef, toCol === 'done');
+    const activeId = getActiveProjectId();
+    if (activeId) {
+        const projects = getAllProjects();
+        if (projects[activeId]?.data) {
+            if (!projects[activeId].data.taskProgress) projects[activeId].data.taskProgress = {};
+            if (movedRef) {
+                projects[activeId].data.taskProgress[`task_${movedRef.obj.id}_${movedRef.kr.id}_${movedRef.task.id}`] = toCol === 'done';
+            }
+            projects[activeId].data.boardSelection = captureBoardSelection();
+            saveAllProjects(projects);
+        }
     }
     jiraRenderBoard();
+    if (document.getElementById('jiraBacklogView')?.style.display !== 'none') jiraRenderBacklog();
 }
 
 // ── Drag & Drop ───────────────────────────────────────────────

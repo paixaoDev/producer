@@ -281,12 +281,13 @@
                         <i class="fas fa-columns"></i> Board
                     </button>
                     <div class="jira-tabs-sep"></div>
-                    <!-- Sprint selector (só visível na aba Board) -->
+                    <!-- Breadcrumb da sprint ativa no board (só visível na aba Board) -->
                     <div class="jira-board-sprint-selector" id="jiraBoardSprintBar" style="display:none">
-                        <span class="jira-filter-label">Sprint:</span>
-                        <select class="kanban-select" id="jiraBoardSprintSelect" onchange="jiraBoardSelectSprint(this.value)">
-                            <option value="">— selecione uma sprint —</option>
-                        </select>
+                        <span class="jira-filter-label"><i class="fas fa-columns"></i></span>
+                        <span id="jiraBoardActiveSprintLabel" style="font-size:.8rem;color:var(--gray-600)">—</span>
+                        <button class="btn-xs btn-ghost" onclick="jiraSetView('backlog')" title="Voltar ao backlog">
+                            <i class="fas fa-arrow-left"></i> Backlog
+                        </button>
                     </div>
                 </div>
 
@@ -329,7 +330,7 @@
                         <div class="kanban-board" id="kanbanBoard">
                             <div class="kanban-empty" id="kanbanEmpty">
                                 <i class="fas fa-columns" style="font-size:2rem;opacity:.3"></i>
-                                <p>Selecione uma sprint acima para abrir o board</p>
+                                <p>Marque tarefas no <strong>Backlog</strong> para montar o board.</p>
                             </div>
                             <div class="kanban-cols" id="kanbanCols" style="display:none">
                                 <div class="kanban-col" id="kcol-todo">
