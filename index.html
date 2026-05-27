@@ -290,7 +290,7 @@
                     </div>
                 </div>
 
-                <!-- Linha 2: avatares de cargo (multiselect) -->
+                <!-- Linha 2: avatares de cargo + filtros de marco -->
                 <div class="jira-roles-bar">
                     <div class="jira-role-avatars" id="jiraRoleAvatars">
                         <button class="jira-avatar active" data-role="programming" title="Programador" onclick="jiraToggleRole('programming')">
@@ -309,6 +309,10 @@
                             <span class="avatar-circle avatar-qa">🧪</span>
                         </button>
                     </div>
+                    <!-- Separador vertical -->
+                    <span class="jira-bar-divider"></span>
+                    <!-- Filtros de marco — populados por JS -->
+                    <div class="jira-milestone-filters" id="jiraMilestoneFiltersBar" style="display:none"></div>
                 </div>
 
                 <!-- Conteúdo das abas -->
