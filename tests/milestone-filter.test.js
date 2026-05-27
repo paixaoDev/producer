@@ -9,6 +9,10 @@ const helperNames = [
     'jiraFilterMilestoneOptions',
     'jiraGetMilestoneQuickLabel',
     'jiraGetMilestoneSelectedLabel',
+    'jiraGetMilestoneForObjective',
+    'jiraGetMilestoneTaskLabel',
+    'jiraGetSprintGroupLabel',
+    'jiraBuildBacklogItemsForMilestoneFilter',
 ];
 const helperStart = source.indexOf('function jiraSortMilestonesForFilter');
 const helperEnd = source.indexOf('// ── Filtro de marco', helperStart);
@@ -54,6 +58,46 @@ assert.equal(
 assert.equal(
     context.jiraGetMilestoneSelectedLabel(milestones[2]),
     'Vertical Slice · Mês 5',
+);
+
+assert.equal(
+    context.jiraGetMilestoneForObjective({ startMonth: 1, endMonth: 4 }, milestones).id,
+    'm1',
+);
+
+assert.equal(
+    context.jiraGetMilestoneTaskLabel(milestones[1]),
+    'Prototipo Jogavel',
+);
+
+assert.equal(
+    context.jiraGetSprintGroupLabel(0),
+    'Selecionar tudo',
+);
+
+const objectives = [
+    {
+        id: 'obj_proto',
+        area: 'programming',
+        startMonth: 1,
+        endMonth: 4,
+        keyResults: [{ id: 'kr_proto', tasks: [{ id: 't1' }] }],
+    },
+    {
+        id: 'obj_beta',
+        area: 'art',
+        startMonth: 7,
+        endMonth: 9,
+        keyResults: [{ id: 'kr_beta', tasks: [{ id: 't2' }] }],
+    },
+];
+
+assert.equal(
+    JSON.stringify(
+        context.jiraBuildBacklogItemsForMilestoneFilter(objectives, milestones, new Set(['programming', 'art']), 'm1')
+            .map(item => [item.obj.id, item.kr.id, item.ms.id])
+    ),
+    JSON.stringify([['obj_proto', 'kr_proto', 'm1']]),
 );
 
 console.log('milestone-filter helpers ok');

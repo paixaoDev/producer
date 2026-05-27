@@ -5267,6 +5267,38 @@ function jiraGetMilestoneSelectedLabel(milestone) {
     return month ? `${milestone.title} · Mês ${month}` : milestone.title;
 }
 
+function jiraGetMilestoneForObjective(obj, milestones) {
+    const sorted = jiraSortMilestonesForFilter(milestones);
+    if (sorted.length === 0) return null;
+
+    const start = Number(obj?.startMonth || obj?.timeline?.startMonth) || 1;
+    return sorted.find(ms => Number(ms.month) >= start) || sorted[sorted.length - 1];
+}
+
+function jiraGetMilestoneTaskLabel(milestone) {
+    return milestone?.title || milestone?.id || 'Marco';
+}
+
+function jiraGetSprintGroupLabel(sprintNumber) {
+    return Number(sprintNumber) > 0 ? `Sprint ${sprintNumber}` : 'Selecionar tudo';
+}
+
+function jiraBuildBacklogItemsForMilestoneFilter(objectives, milestones, selectedRoles, selectedMilestone) {
+    const items = [];
+    (objectives || []).forEach(obj => {
+        if (selectedRoles && !selectedRoles.has(obj.area)) return;
+
+        const milestone = jiraGetMilestoneForObjective(obj, milestones);
+        if (!milestone) return;
+        if (selectedMilestone && milestone.id !== selectedMilestone) return;
+
+        (obj.keyResults || []).forEach(kr => {
+            items.push({ obj, kr, ms: milestone });
+        });
+    });
+    return items;
+}
+
 // ── Filtro de marco ───────────────────────────────────────────
 function jiraSetMilestoneFilter(msId) {
     jiraSelectedMilestone = (jiraSelectedMilestone === msId) ? null : msId;
@@ -5455,30 +5487,8 @@ function jiraRenderBacklog() {
     const typeIcons  = { vertical_slice:'🔬', alpha:'⚡', beta:'🧪', gold:'🏆', release:'🚀', prototype:'🔬', demo:'🎬' };
     const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
 
-    // Mapa de marco por intervalo de meses
-    const msMap = milestones.map((ms, msIdx) => ({
-        ms,
-        msEnd  : ms.month,
-        msStart: msIdx > 0 ? milestones[msIdx-1].month : 0,
-    }));
-
-    function getMsForObj(obj) {
-        const objEnd = obj.endMonth || obj.timeline?.endMonth || 0;
-        return msMap.find(({ msStart, msEnd }) => objEnd > msStart && objEnd <= msEnd) || null;
-    }
-
     // Coleta sprints planas
-    const allItems = [];
-    ALL_ROLES.forEach(role => {
-        if (!jiraSelectedRoles.has(role)) return;
-        objList.forEach(obj => {
-            if (obj.area !== role) return;
-            const msEntry = getMsForObj(obj);
-            if (!msEntry) return;
-            if (jiraSelectedMilestone && msEntry.ms.id !== jiraSelectedMilestone) return;
-            (obj.keyResults || []).forEach(kr => allItems.push({ obj, kr, ms: msEntry.ms }));
-        });
-    });
+    const allItems = jiraBuildBacklogItemsForMilestoneFilter(objList, milestones, jiraSelectedRoles, jiraSelectedMilestone);
 
     if (allItems.length === 0) {
         const empty = document.createElement('div');
@@ -5529,7 +5539,7 @@ function jiraRenderBacklog() {
             <span class="jira-sprint-name" style="font-weight:500;font-size:.84rem">${kr.title}</span>
             <span class="sprint-milestone-tag" title="${ms.title}" data-ms-id="${ms.id}"
                   onclick="jiraSetMilestoneFilter('${ms.id}');event.stopPropagation()">
-                ${typeIcons[ms.type]||'📍'} M${ms.month}
+                ${typeIcons[ms.type]||'📍'} ${jiraGetMilestoneTaskLabel(ms)}
             </span>
             <span class="jira-sprint-meta">
                 <span class="jira-board-selected-count">${selectedCount} no board</span>
@@ -5632,7 +5642,7 @@ function jiraRenderBacklog() {
                 `<span style="width:7px;height:7px;border-radius:50%;background:${areaColors[a]||'#999'};display:inline-block" title="${ROLE_LABELS[a]||a}"></span>`
             ).join('');
 
-            const sprintLabel = sn > 0 ? `Sprint ${sn}` : 'Sem sprint';
+            const sprintLabel = jiraGetSprintGroupLabel(sn);
             groupEl.innerHTML = `
                 <div class="backlog-sprint-section-header" onclick="this.parentElement.classList.toggle('collapsed')">
                     <button class="jira-board-toggle ${groupAllSelected ? 'checked' : ''} ${groupSomeSelected ? 'mixed' : ''}"
