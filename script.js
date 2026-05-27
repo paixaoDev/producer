@@ -4360,6 +4360,17 @@ function saveApplicationState() {
 
 function restoreApplicationState() {
     try {
+        // Se há um projeto ativo no sistema de projetos, ele tem prioridade —
+        // é a fonte de verdade mais atualizada (inclui títulos/descrições melhorados pela IA).
+        const activeId = getActiveProjectId();
+        if (activeId) {
+            const projects = getAllProjects();
+            if (projects[activeId]) {
+                loadProject(activeId, { silent: true });
+                return;
+            }
+        }
+
         const saved = store.getState();
         if (!saved) return;
         const state = JSON.parse(saved);
@@ -4688,8 +4699,11 @@ Sem texto extra fora do JSON.`;
     aiEnhanceSetProgress(allTasks.length, allTasks.length, `Concluído! ${doneCount} tarefas melhoradas${errorCount ? `, ${errorCount} erros` : ''}.`);
     aiEnhanceLogAdd(`\n✨ Melhoria concluída! ${doneCount} de ${allTasks.length} tarefas atualizadas.`, 'ok');
 
-    // Salva o analysisResult atualizado
+    // Salva o analysisResult atualizado em ambos os sistemas de persistência:
+    // saveCurrentProject → sistema de projetos (fonte principal)
+    // saveApplicationState → estado legado (evita que reload sobrescreva com versão antiga)
     saveCurrentProject({ notify: false });
+    saveApplicationState();
 
     // Regenera o scheduledResult a partir do analysisResult atualizado,
     // para que backlog, board e timeline mostrem os novos títulos/descrições
@@ -4819,7 +4833,8 @@ function saveCurrentProject(options = {}) {
 }
 
 // Carrega um projeto e exibe o roadmap
-function loadProject(projectId) {
+// options.silent = true suprime a notificação (usado na restauração automática ao iniciar)
+function loadProject(projectId, options = {}) {
     const projects = getAllProjects();
     const project = projects[projectId];
     if (!project) { showNotification('Projeto não encontrado.', 'error'); return; }
@@ -4839,12 +4854,12 @@ function loadProject(projectId) {
     }
     restoreBoardSelection(data.boardSelection || {});
 
-    // Mostra resultados
+    // Mostra resultados (recomputeSchedule é chamado internamente por showResults)
     showResults();
     renderSidebar();
     updateSaveBtn();
     closeSidebar();
-    showNotification(`"${project.name}" carregado!`, 'success');
+    if (!options.silent) showNotification(`"${project.name}" carregado!`, 'success');
 }
 
 // Renomeia um projeto
