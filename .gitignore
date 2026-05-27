@@ -6,6 +6,7 @@ Thumbs.db
 AGENTS.md
 docs/
 gerados/
+tests/
 
 # Dependências
 node_modules/
