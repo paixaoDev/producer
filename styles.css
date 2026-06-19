@@ -887,6 +887,122 @@ body.results-workspace-mode .workspace-body {
     border-bottom-color: var(--primary-color);
 }
 
+.workspace-scope-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.45rem;
+    margin-bottom: 0.85rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
+    background: #ffffff;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.workspace-scope-group {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 0 0 auto;
+}
+
+.workspace-scope-label {
+    color: #626f86;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.workspace-scope-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.28rem;
+}
+
+.workspace-scope-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 30px;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid #dfe1e6;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #44546f;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.workspace-scope-area-chip {
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0.88rem;
+}
+
+.workspace-scope-phase-chip {
+    min-height: 30px;
+    padding: 0.25rem 0.48rem;
+    font-size: 0.75rem;
+}
+
+.workspace-scope-chip:hover {
+    background: #f1f2f4;
+    color: #172b4d;
+}
+
+.workspace-scope-chip.active {
+    border-color: var(--chip-color, var(--primary-color));
+    background: color-mix(in srgb, var(--chip-color, var(--primary-color)) 12%, white);
+    color: var(--chip-color, var(--primary-color));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--chip-color, var(--primary-color)) 14%, transparent);
+}
+
+.workspace-scope-chip.all {
+    --chip-color: var(--primary-color);
+}
+
+.workspace-scope-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: 34px;
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+    border: 1px solid #dfe1e6;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #44546f;
+    font-size: 0.8rem;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.workspace-scope-reset:hover {
+    background: #f1f2f4;
+    color: #172b4d;
+}
+
+.workspace-scope-summary {
+    margin-left: auto;
+    flex: 0 0 auto;
+    color: #626f86;
+    font-size: 0.76rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 .workspace-panel {
     display: none;
     min-width: 0;
@@ -894,6 +1010,10 @@ body.results-workspace-mode .workspace-body {
 
 .workspace-panel.active {
     display: block;
+}
+
+#workspaceTimelinePanel {
+    padding-bottom: 2rem;
 }
 
 .workspace-side-rail {
@@ -2365,6 +2485,221 @@ body.results-workspace-mode .workspace-body {
 .milestone-funding i {
     color: var(--secondary-color);
     margin-right: 0.3rem;
+}
+
+/* ============================================================
+   CUSTOS POR FASE
+   ============================================================ */
+.costs-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.costs-summary,
+.costs-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.costs-total-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.85rem;
+    border: 1px solid var(--gray-100);
+    border-radius: 6px;
+    background: #f8fafc;
+}
+
+.costs-total-card span,
+.costs-total-card small,
+.costs-formula,
+.cost-area-rate,
+.cost-phase-header span {
+    color: var(--gray-500);
+    font-size: 0.78rem;
+}
+
+.cost-inline-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--gray-500);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.cost-inline-control input {
+    width: 64px;
+    height: 28px;
+    padding: 0 0.35rem;
+    border: 1px solid var(--gray-200);
+    border-radius: 5px;
+    color: var(--gray-700);
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: #ffffff;
+}
+
+.cost-inline-control input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(12, 102, 228, 0.12);
+}
+
+.costs-total-card strong {
+    color: var(--gray-800);
+    font-size: 1.45rem;
+    line-height: 1.2;
+}
+
+.costs-formula {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    line-height: 1.45;
+}
+
+.costs-formula i {
+    margin-top: 0.1rem;
+    color: var(--primary-color);
+}
+
+.costs-section h4 {
+    margin: 0;
+    color: var(--gray-700);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.cost-area-list,
+.cost-phase-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.cost-area-row,
+.cost-phase-area {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 34px;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--gray-100);
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.cost-area-name,
+.cost-phase-area span:nth-child(2) {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--gray-700);
+    font-size: 0.84rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cost-area-row strong,
+.cost-phase-area strong,
+.cost-phase-total {
+    color: var(--gray-800);
+    font-size: 0.84rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.cost-phase-row {
+    overflow: hidden;
+    border: 1px solid var(--gray-100);
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.cost-phase-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.65rem;
+    border: 0;
+    background: #ffffff;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.cost-phase-header:hover {
+    background: var(--gray-50);
+}
+
+.cost-phase-header > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+    min-width: 0;
+}
+
+.cost-phase-header strong {
+    overflow: hidden;
+    color: var(--gray-800);
+    font-size: 0.86rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cost-phase-total {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.cost-phase-total i {
+    color: var(--gray-300);
+    font-size: 0.65rem;
+    transition: transform 0.2s;
+}
+
+.cost-phase-row.open .cost-phase-total i {
+    transform: rotate(180deg);
+}
+
+.cost-phase-body {
+    display: none;
+    padding: 0 0.65rem 0.65rem;
+}
+
+.cost-phase-row.open .cost-phase-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.cost-phase-area {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    min-height: 30px;
+    padding: 0.35rem 0.45rem;
+    background: #f8fafc;
+}
+
+.cost-phase-area span:nth-child(3) {
+    color: var(--gray-500);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.costs-empty {
+    margin: 0;
+    color: var(--gray-500);
+    font-size: 0.84rem;
 }
 
 /* ============================================================
@@ -4609,6 +4944,9 @@ body.results-workspace-mode .workspace-body {
     .workspace-tabs {
         overflow-x: auto;
     }
+    .workspace-scope-bar {
+        align-items: center;
+    }
     .workspace-side-rail {
         padding: 0.75rem 0.35rem;
     }
@@ -4645,4 +4983,367 @@ body.results-workspace-mode .workspace-body {
     .work-task-prio {
         margin-left: 75px;
     }
+}
+
+/* ============================================================
+   NOVO CRONOGRAMA — resumo grid + detalhado por tarefa
+   ============================================================ */
+
+/* --- Filtro de área (chips) --------------------------------- */
+.schedule-area-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+}
+.sch-area-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--chip-color, var(--gray-300));
+    background: transparent;
+    color: var(--gray-600);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.sch-area-chip.active {
+    background: var(--chip-color, var(--gray-300));
+    color: #fff;
+}
+.sch-area-chip .chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--chip-color, var(--gray-400));
+    flex-shrink: 0;
+}
+.sch-area-chip.active .chip-dot {
+    background: rgba(255,255,255,0.8);
+}
+
+/* --- Grid resumo área × fase ------------------------------- */
+.sch-summary-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.sch-grid-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 520px;
+    font-size: 0.8rem;
+}
+.sch-grid-table th,
+.sch-grid-table td {
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    border: 1px solid var(--gray-200);
+}
+.sch-grid-area-header {
+    background: var(--gray-50);
+    font-weight: 600;
+    color: var(--gray-600);
+    white-space: nowrap;
+    min-width: 120px;
+}
+.sch-grid-phase-header {
+    background: var(--gray-50);
+    text-align: center;
+    min-width: 110px;
+}
+.sch-phase-name {
+    font-weight: 600;
+    color: var(--gray-700);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+.sch-phase-month {
+    font-size: 0.68rem;
+    color: var(--gray-400);
+}
+.sch-grid-area-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+    font-weight: 500;
+    color: var(--gray-700);
+}
+.sch-grid-row:hover td {
+    background: var(--gray-50);
+}
+.sch-grid-cell {
+    vertical-align: top;
+    text-align: center;
+}
+.sch-cell-empty {
+    color: var(--gray-300);
+    text-align: center;
+}
+.sch-cell-cost {
+    font-weight: 600;
+    color: var(--gray-800);
+    font-size: 0.78rem;
+}
+.sch-cell-meta {
+    font-size: 0.68rem;
+    color: var(--gray-400);
+    margin-top: 1px;
+}
+.sch-cell-bar {
+    height: 3px;
+    background: var(--gray-100);
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+}
+.sch-cell-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    opacity: 0.7;
+    transition: width 0.3s;
+}
+.sch-grid-total,
+.sch-col-total {
+    background: var(--gray-50);
+    font-weight: 600;
+}
+.sch-grid-foot td {
+    background: var(--gray-100);
+    font-weight: 600;
+}
+.sch-grid-phase-total {
+    text-align: center;
+}
+
+/* --- Lista detalhada por fase ------------------------------ */
+.sch-phase-group {
+    margin-bottom: 1.25rem;
+}
+.sch-phase-group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--gray-100);
+    border-left: 3px solid var(--indigo-500, #6366f1);
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 0.5rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--gray-700);
+}
+.sch-phase-group-header i {
+    color: var(--indigo-500, #6366f1);
+    font-size: 0.75rem;
+}
+.sch-phase-group-month {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--gray-400);
+    margin-left: 0.25rem;
+}
+.sch-phase-group-count {
+    margin-left: auto;
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--gray-400);
+    background: var(--gray-200);
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+}
+
+/* --- Lanes (área única vs interleaved) -------------------- */
+.sch-phase-lanes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.sch-lane-header {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--gray-600);
+    padding: 0 0 0.35rem 0;
+    border-bottom: 2px solid;
+    margin-bottom: 0.25rem;
+}
+.sch-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+/* --- Linha de tarefa --------------------------------------- */
+.sch-task-row {
+    display: flex;
+    gap: 0;
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: box-shadow 0.15s;
+}
+.sch-task-row:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.07);
+}
+.sch-task-left-bar {
+    width: 3px;
+    flex-shrink: 0;
+    background: var(--task-color, var(--gray-300));
+}
+.sch-task-content {
+    flex: 1;
+    padding: 0.4rem 0.65rem;
+    min-width: 0;
+}
+.sch-task-title {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--gray-800);
+    flex-wrap: wrap;
+}
+.sch-task-area-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.sch-task-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.2rem;
+    font-size: 0.7rem;
+    color: var(--gray-400);
+    flex-wrap: wrap;
+}
+.sch-task-kr {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sch-task-days {
+    background: var(--gray-100);
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.68rem;
+}
+.sch-task-deadline {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--indigo-500, #6366f1);
+    font-weight: 500;
+    margin-left: auto;
+}
+.sch-task-deadline i {
+    font-size: 0.65rem;
+}
+
+/* ── Gantt de tarefas (abaixo do gantt principal) ── */
+
+/* Separador de fase */
+.category-label--phase-sep {
+    background: var(--gray-100);
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--gray-500);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 4px;
+    height: 16px;
+    min-height: 16px;
+    border-top: 1px solid var(--gray-200);
+    border-radius: 0;
+}
+.phase-sep-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.timeline-category--phase-sep {
+    height: 16px;
+    min-height: 16px;
+    border-top: 1px solid var(--gray-200);
+    background: var(--gray-50);
+}
+.timeline-track--phase-sep {
+    height: 16px;
+    position: relative;
+    background: transparent;
+}
+
+/* Linha por tarefa com quadradinhos por dia */
+.category-label--task {
+    height: 22px;
+    min-height: 22px;
+    font-size: 0.72rem;
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 3px;
+}
+.category-label--task .area-dot {
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+}
+.timeline-category--task {
+    height: 22px;
+    min-height: 22px;
+}
+.timeline-track--task {
+    height: 22px;
+    position: relative;
+}
+.task-day-cell {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 2px;
+    opacity: 0.9;
+    cursor: default;
+    transition: opacity 0.12s;
+}
+.task-day-cell:hover {
+    opacity: 1;
+    z-index: 2;
+}
+
+/* ── Cabeçalho de dias (gantt detalhado) ── */
+.tl-row-days {
+    display: flex;
+}
+.tl-header-day {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.58rem;
+    color: var(--gray-400);
+    border-right: 1px solid var(--gray-100);
+    height: 16px;
+    box-sizing: border-box;
+}
+.tl-header-day.tl-day-last {
+    border-right: 1px solid var(--gray-300);
+}
+
+/* divisor de dia (mais suave que semana) */
+.day-divider {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: var(--gray-100);
+    pointer-events: none;
 }

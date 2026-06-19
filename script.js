@@ -11,7 +11,20 @@ let workMilestoneOutsideClickHandler = null;
 // Configuração de equipe (sliders) — persiste entre re-renders
 let teamConfig = { programming: 1, art: 1, design: 1, audio: 1, qa: 1, production: 1 };
 
-// Modo de exibição da timeline: 'simple' = uma barra por área | 'detailed' = uma barra por objetivo
+const HOURS_PER_ESTIMATED_DAY = 6;
+const DEFAULT_HOURLY_RATES = {
+    programming: 120,
+    art:         90,
+    design:      90,
+    audio:       90,
+    qa:          70,
+    production:  110,
+};
+let hourlyRates = { ...DEFAULT_HOURLY_RATES };
+let workspaceScopeAreas = new Set();
+let workspaceScopeMilestones = new Set();
+
+// Modo de exibição da timeline: 'detailed' = objetivo | 'simple' = área | 'phase' = fase/marco
 let timelineMode = 'detailed';
 
 // Resultado do scheduling (objectives com startMonth/endMonth calculados pelo scheduler)
@@ -1686,6 +1699,7 @@ async function analyzeDocument() {
         // FASE FINAL: MD → JSON
         const consolidatedMD = buildConsolidatedMD(phase1md, subareaList, phase3mds, phase4md);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
+        resetWorkspaceScopeState();
 
         // Geração concluída — limpa o cache de progresso
         store.removeProgress();
@@ -1775,6 +1789,7 @@ async function resumeAnalysis() {
         setLoadingPhase(5, 'Consolidando em roadmap final...');
         const consolidatedMD = buildConsolidatedMD(phase1md, subareaList, phase3mds, phase4md);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
+        resetWorkspaceScopeState();
 
         store.removeProgress();
         showResults();
@@ -2008,7 +2023,17 @@ Gênero detectado: ${genreCtx.label}
 Áreas típicas do gênero: ${genreCtx.objectives.slice(0, 5).join(', ')}
 
 INSTRUÇÕES:
-Gere de 20 a 35 sub-áreas cobrindo TODO o desenvolvimento. Use o formato exato abaixo.
+Gere de 12 a 22 sub-áreas cobrindo TODO o desenvolvimento. Use o formato exato abaixo.
+
+${roadmapPhaseContractText()}
+
+PASSO OBRIGATÓRIO — IDENTIFICAR A MECÂNICA PRIORITÁRIA:
+Antes de gerar as sub-áreas, identifique qual é a mecânica que torna este jogo único — não o gênero, mas o diferencial real. Exemplos: em Superhot o diferencial não é ser FPS, é o tempo parar quando o jogador para. Em um boss rush sobre puxar energia, o diferencial não é "combate", é o sistema de absorção/puxar energia.
+A mecânica prioritária identificada DEVE:
+1. Aparecer na PoC como sistema técnico isolado (pergunta: consigo implementar isso?)
+2. Aparecer no Prototype como core do loop jogável
+3. Guiar quais sistemas e sub-áreas têm prioridade nas primeiras fases
+Se o jogo é um boss rush com mecânica X como diferencial, a PoC deve ter: sistema X funcionando isoladamente + pelo menos 1 boss para testar X contra ele + HUD mínimo para ver o estado de X.
 
 IMPORTANTE — DISTRIBUIÇÃO TEMPORAL:
 O projeto tem duração de ${duracaoMeses} meses. Você DEVE distribuir as sub-áreas ao longo de TODOS os ${duracaoMeses} meses.
@@ -2035,6 +2060,8 @@ Retorne APENAS o Markdown abaixo, sem texto antes ou depois:
 - Engine: [engine inferida ou "agnóstico"]
 - Duração: ${duracaoMeses} meses
 - Descrição: [2-3 frases sobre o jogo]
+- Mecânica Prioritária: [a mecânica única que diferencia este jogo — descreva exatamente o que o jogador faz, com qual input e qual efeito — não use o nome do gênero como resposta]
+- Risco Técnico Principal: [o maior risco técnico que a PoC deve validar — seja específico]
 
 # SUB-ÁREAS
 ## [id: sa_prog_core] Programação — Arquitetura Core
@@ -2117,6 +2144,19 @@ function extractSubareasFromMD(md) {
     return subareas;
 }
 
+function roadmapPhaseContractText() {
+    return `CONTRATO DAS FASES DO ROADMAP:
+- poc/prova de conceito: valida os maiores riscos TECNICOS do jogo. Pergunta: consigo construir isso? Deve conter apenas sistemas tecnicos criticos funcionando em testes isolados — nada precisa ser bonito, divertido ou completo. Exemplos: emulacao funcionando, mecanica de puxar energia implementada isoladamente, fisica de agua testada. Criterio para avançar: todos os riscos tecnicos principais foram resolvidos. NAO inclui gameplay completo, arte final, HUD, bosses completos ou divertimento.
+- prototype/prototipo: valida a DIVERSAO do jogo. Pergunta: isso e divertido? Deve conter o core loop completo e jogavel com assets temporarios: controle principal, uma arena/cenario de teste, uma interacao ou um boss/inimigo representativo, feedback minimo de jogabilidade. Pode ter arte feia, UI temporaria, sons provisorios. Criterio: jogadores se divertem, entendem o jogo e o loop principal funciona. NAO inclui todos os bosses, todos os biomas, sistemas finais, economia completa, UI final ou marketing.
+- Arte no prototipo: incluir direcao visual jogavel minima alem de concept art — style guide, paleta, shape language, assets temporarios, placeholder visual, blockout de cenario, UI temporaria e VFX simples para o loop testavel.
+- demo: build publica para vender o jogo ao publico. Pergunta: alguem quer jogar isso? Deve conter o diferencial do jogo em um core loop redondo e fechado: caminho/arena jogavel, um personagem ou ponto de interacao quando relevante, uma luta/desafio principal, inicio-meio-fim claro, feedback visual/sonoro suficiente e estabilidade para evento/Steam Next Fest. Duracao ideal: 10 a 30 minutos.
+- vertical_slice: fatia real e polida do jogo com qualidade de lancamento. Pergunta: consigo terminar esse jogo nesse nivel de qualidade? Deve conter arte final, UI final, audio final, efeitos finais, normalmente uma fase, um chefe, uma missao. Suficiente para entender o que o jogo e apenas jogando essa parte. NAO e jogo inteiro.
+- alpha: jogo completo em termos de sistemas e conteudo principal jogavel internamente. Todas as mecanicas, todos os sistemas, todas as areas — ainda com arte/audio/polish incompletos e bugs conhecidos. Nao entram novas mecanicas a partir daqui.
+- beta: conteudo completo, foco em balanceamento, QA externo, performance, usabilidade, localizacao e correcoes. Nao adicionar escopo novo relevante.
+- gold: candidate/master de lancamento, certificacao/submissao, zero bugs criticos, otimizacao final e checklist de plataforma.
+- release/lancamento: publicacao, loja, comunicacao, monitoramento, hotfixes e suporte pos-lancamento.`;
+}
+
 // FASE 2 (MD): Para cada sub-área, gera Markdown com Key Results
 async function mdPhase2_KRs(subareaList, genreCtx, gddNormalizado, apiKey, onProgress) {
     const results = {}; // id → md string
@@ -2146,6 +2186,8 @@ async function mdPhase2_KRs(subareaList, genreCtx, gddNormalizado, apiKey, onPro
 
 Projeto: ${gddNormalizado.titulo || overview.title || 'jogo'} | Engine: ${gddNormalizado.engine || 'agnóstico'} | Duração: ${gddNormalizado.duracao_desenvolvimento || overview.totalDurationMonths || '?'} meses
 
+${roadmapPhaseContractText()}
+
 GDD DO PROJETO — informações relevantes para ${sa.area}:
 ${gddContext}
 
@@ -2157,7 +2199,7 @@ Referência de pipeline para esta área:
 ${pipelineHint || '(use boas práticas da indústria)'}
 
 Gere os Key Results (KRs) desta sub-área. OBRIGATÓRIO: use nomes e elementos reais do GDD acima (personagens, mecânicas, ambientes). KRs genéricos são inaceitáveis. Regras:
-- Entre 6 e 12 KRs concretos e verificáveis
+- Entre 3 e 6 KRs concretos e verificáveis
 - ARTE: cada etapa do pipeline separada (concept, high poly, retopo, UV, textura, rig, cada grupo de anims)
 - PROGRAMAÇÃO: implementação, integração, testes e polish como KRs separados
 - DESIGN: rascunho, revisão, aprovação e iteração pós-playtesting separados
@@ -2218,6 +2260,8 @@ async function mdPhase3_Sprints(subareaList, phase2mds, genreCtx, gddNormalizado
 
 Projeto: ${gddNormalizado.titulo || overview.title || 'jogo'} | Engine: ${gddNormalizado.engine || 'agnóstico'}
 
+${roadmapPhaseContractText()}
+
 GDD DO PROJETO — use estes dados para nomear as tarefas com elementos reais do jogo:
 ${gddContext}
 
@@ -2228,7 +2272,7 @@ ${krsMd}
 
 Para CADA KR, crie as tarefas que compõem esse KR. OBRIGATÓRIO: mencione elementos reais do GDD (nomes de personagens, mecânicas específicas, ambientes). Nunca escreva "personagem principal" se o GDD diz o nome dele.
 
-Conceito de sprint: cada sprint dura 2 semanas (10 dias úteis). Cada tarefa deve ter estimativa de 1, 2 ou 3 dias de trabalho. Um KR pode ter múltiplas sprints.
+Conceito de sprint: cada sprint dura 2 semanas (10 dias úteis). Cada tarefa deve ter estimativa de 1 ou 2 dias de trabalho. Um KR pode ter múltiplas sprints.
 
 FORMATO DE CADA TAREFA — dois campos separados por " >> ":
 1. TÍTULO: curto e direto (máx. 5 palavras), verbo no infinitivo + objeto principal. Ex: "Modelar personagem Kael", "Implementar sistema de dash"
@@ -2237,10 +2281,14 @@ FORMATO DE CADA TAREFA — dois campos separados por " >> ":
 Regras:
 - Verbos no título: Implementar, Modelar, Texturizar, Riger, Animar, Testar, Compor, Escrever, Projetar, Revisar
 - Descrição ULTRA-ESPECÍFICA: mencione ferramentas, parâmetros, entregável concreto
+- Tarefas pequenas: quebre qualquer entrega maior em passos de 1 ou 2 dias; granularidade pequena NAO muda a fase do escopo
+- Distribua escopo por fase: poc valida APENAS sistemas tecnicos criticos isoladamente (sem gameplay, sem arte final, sem bosses completos); prototipo valida a diversao com um recorte minimo jogavel; demo vende o core loop curto; vertical slice mostra uma fatia real polida; alpha completa sistemas/conteudo; beta/gold/release focam QA, polish e publicacao
+- Se uma tarefa cita "todos", "todas", quantidade total de bosses/fases/biomas ou sistemas finais completos, ela NAO pertence ao poc, prototipo nem a demo
+- Tarefas de poc: apenas implementacao tecnica isolada, testes de viabilidade, spikes — sem arte, sem gameplay completo, sem HUD final
 - Arte: modelagem/UV/textura/rig/anims em tarefas separadas
 - Programação: lógica core / testes / integração / feedback visual separados
 - Design: rascunho / revisão / aprovação / iteração separados
-- 3-10 tarefas por KR | 1, 2 ou 3 dias por tarefa
+- 3-7 tarefas pequenas por KR | 1 ou 2 dias por tarefa
 - Prioridade: critical (blocker), high (core), medium (conteúdo), low (polish)
 - Tipo: feature, art, design, audio, test, fix, config, doc
 
@@ -2249,7 +2297,7 @@ Retorne APENAS o Markdown abaixo:
 ## ${sa.title}
 ### KR 1: [nome do KR]
 - [ ] Título curto >> Descrição técnica detalhada do que fazer e como | 2d | high | feature
-- [ ] Outra tarefa >> Descrição com ferramenta e entregável esperado | 3d | high | art
+- [ ] Outra tarefa >> Descrição com ferramenta e entregável esperado | 1d | high | art
 - [ ] Revisar e aprovar >> Checar critérios de aceitação com o time e registrar feedback | 1d | medium | doc
 
 ### KR 2: [nome do KR]
@@ -2282,10 +2330,25 @@ Projeto: ${gddNormalizado.titulo || genreCtx.label} | Gênero: ${gddNormalizado.
 Plataforma: ${gddNormalizado.plataformas} | Engine: ${gddNormalizado.engine}
 Sinopse: ${gddNormalizado.sinopse}
 
+${roadmapPhaseContractText()}
+
 Sub-áreas do projeto:
 ${areasSummary}
 
-Defina 5 a 8 marcos verificáveis. Os nomes dos marcos devem refletir o projeto real (ex: "Vertical Slice de [nome do jogo]", não "Vertical Slice").
+Defina exatamente 8 marcos verificáveis, nesta ordem obrigatória:
+1. poc
+2. prototype
+3. demo
+4. vertical_slice
+5. alpha
+6. beta
+7. gold
+8. release
+
+Os nomes dos marcos devem refletir o projeto real (ex: "PoC de [mecânica principal do jogo]", "Vertical Slice de [nome do jogo]").
+Nao pule poc nem demo. Nao trate poc como prototype. Nao trate prototype como vertical slice. Nao trate vertical slice como alpha.
+Use o GDD para escolher o menor recorte convincente de cada fase.
+Exemplos de proporcao: poc valida apenas os sistemas tecnicos criticos isoladamente (sem gameplay completo); prototype testa a diversao com um boss representativo e o core loop; demo tem caminho curto + interacao + desafio principal fechado; vertical_slice tem uma fatia polida com qualidade de lancamento.
 
 Retorne APENAS o Markdown:
 
@@ -2293,7 +2356,7 @@ Retorne APENAS o Markdown:
 
 ## Marco 1: [nome]
 - Mês: [N]
-- Tipo: prototype | alpha | beta | gold | release | vertical_slice | demo
+- Tipo: poc | prototype | demo | vertical_slice | alpha | beta | gold | release
 - Descrição: [o que foi construído até este ponto]
 - Entregáveis: item 1 | item 2 | item 3
 - Critérios de aceite: critério 1 | critério 2
@@ -2309,6 +2372,54 @@ function buildConsolidatedMD(phase1md, subareaList, phase3mds, phase4md) {
         .join('\n\n');
 
     return `${phase1md}\n\n# ROADMAP DETALHADO\n\n${sprintSections}\n\n${phase4md}`;
+}
+
+function normalizeMilestoneSequence(milestones, totalMonths = 24) {
+    const phaseOrder = ['poc', 'prototype', 'demo', 'vertical_slice', 'alpha', 'beta', 'gold', 'release'];
+    const phaseDefaults = {
+        poc:            { title: 'PoC — Validação Técnica', ratio: 0.08 },
+        prototype:      { title: 'Prototipo Jogavel', ratio: 0.2 },
+        demo:           { title: 'Demo Jogavel', ratio: 0.36 },
+        vertical_slice: { title: 'Vertical Slice', ratio: 0.52 },
+        alpha:          { title: 'Alpha Interna', ratio: 0.68 },
+        beta:           { title: 'Beta Fechada', ratio: 0.84 },
+        gold:           { title: 'Gold Master', ratio: 0.94 },
+        release:        { title: 'Lancamento', ratio: 1 },
+    };
+    const normalizeType = (typeof WorkBacklogHelpers !== 'undefined' && WorkBacklogHelpers.normalizeMilestoneType)
+        ? WorkBacklogHelpers.normalizeMilestoneType
+        : (type => type);
+    const byType = new Map();
+
+    (milestones || []).forEach((milestone, index) => {
+        const type = normalizeType(milestone.type || '');
+        if (!phaseOrder.includes(type) || byType.has(type)) return;
+        byType.set(type, {
+            ...milestone,
+            id: milestone.id || `m${index + 1}`,
+            type,
+        });
+    });
+
+    let lastMonth = 0;
+    return phaseOrder.map((type, index) => {
+        const defaults = phaseDefaults[type];
+        const existing = byType.get(type) || {};
+        const defaultMonth = Math.max(1, Math.round((totalMonths || 24) * defaults.ratio));
+        const month = Math.min(totalMonths || 24, Math.max(lastMonth + 1, existing.month || defaultMonth));
+        lastMonth = month;
+
+        return {
+            id: `m${index + 1}`,
+            title: existing.title || defaults.title,
+            month,
+            type,
+            description: existing.description || '',
+            deliverables: existing.deliverables || [],
+            acceptanceCriteria: existing.acceptanceCriteria || [],
+            fundingRelevance: existing.fundingRelevance || ''
+        };
+    });
 }
 
 // FASE FINAL: Converte o MD consolidado em JSON estruturado para a UI
@@ -2329,13 +2440,20 @@ async function mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNorm
     };
 
     const subareasFromMD = extractSubareasFromMD(consolidatedMD);
-    const milestones = parseMDMilestones(consolidatedMD);
+    const milestones = normalizeMilestoneSequence(
+        parseMDMilestones(consolidatedMD),
+        overview.totalDurationMonths
+    );
 
     // Parsear objetivos + KRs + tarefas do MD de sprints
     const objectives = parseMDSprints(consolidatedMD, subareasFromMD);
 
     // Calcular pontos de sprint e recalcular duração real dos objetivos
     assignSprintPoints(objectives, overview.totalDurationMonths);
+
+    // Atribuir milestoneId a todas as tarefas com base na posição do KR
+    // dentro da timeline do objetivo (curva: M1 leve → pico M3/M4 → M5/M6 enxutos)
+    assignMilestoneIds(objectives, milestones);
 
     // Gerar edital summary via API
     let editalSummary = null;
@@ -2361,6 +2479,80 @@ async function mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNorm
         totalDurationMonths: overview.totalDurationMonths,
         generatedAt: new Date().toISOString()
     };
+}
+
+// ============================================================
+// ATRIBUIÇÃO DE MILESTONE POR TAREFA
+// Distribui milestoneId em cada tarefa com base na posição do KR
+// dentro da timeline do objetivo e nos marcos do projeto.
+//
+// Curva esperada: M1 leve (validação rápida) → pico em M3/M4 (produção)
+//                → M5/M6 enxutos (gold + lançamento).
+//
+// Lógica:
+//   1. Para cada objetivo, distribui seus KRs linearmente entre
+//      startMonth e endMonth do objetivo.
+//   2. O mês estimado do KR é mapeado para o marco mais próximo
+//      (o primeiro marco com cutoff >= mês estimado).
+//   3. Tarefas herdam o milestoneId do KR pai.
+//
+// Não altera tarefas que já possuem milestoneId atribuído
+// quando preserveExisting=true (usado na melhoria pós-geração).
+// ============================================================
+
+function assignMilestoneIds(objectives, milestones, preserveExisting = false) {
+    if (!milestones || milestones.length === 0) return;
+
+    // Ordena marcos por mês crescente
+    const sorted = milestones.slice().sort((a, b) => (a.month || 0) - (b.month || 0));
+    const totalTasks = Math.max(1, (objectives || []).reduce((sum, obj) =>
+        sum + (obj.keyResults || []).reduce((krSum, kr) => krSum + (kr.tasks || []).length, 0), 0));
+    let taskIndex = 0;
+
+    function milestoneForMonth(month) {
+        for (const m of sorted) {
+            if (month <= (m.month || 0)) return m.id;
+        }
+        return sorted[sorted.length - 1]?.id || null;
+    }
+
+    function milestoneForTask(task, kr, obj, fallbackMonth) {
+        const progress = taskIndex / totalTasks;
+        const selector = (typeof WorkBacklogHelpers !== 'undefined' && WorkBacklogHelpers.selectMilestoneIdForTask)
+            ? WorkBacklogHelpers.selectMilestoneIdForTask
+            : null;
+        if (selector) {
+            return selector(task, kr, obj, sorted, progress);
+        }
+        return milestoneForMonth(fallbackMonth);
+    }
+
+    const orderedObjectives = (objectives || []).slice().sort((a, b) => {
+        const monthDiff = (a.startMonth || 1) - (b.startMonth || 1);
+        if (monthDiff !== 0) return monthDiff;
+        return String(a.title || '').localeCompare(String(b.title || ''));
+    });
+
+    for (const obj of orderedObjectives) {
+        const start = obj.startMonth || 1;
+        const end   = obj.endMonth   || start;
+        const krs   = obj.keyResults || [];
+        const total = krs.length;
+
+        krs.forEach((kr, idx) => {
+            // Mês estimado do KR: interpolação linear dentro da janela do objetivo
+            const krMonth = total > 1
+                ? start + (end - start) * (idx / (total - 1))
+                : (start + end) / 2;
+
+            for (const task of (kr.tasks || [])) {
+                taskIndex++;
+                if (preserveExisting && task.milestoneId) continue;
+                const mid = milestoneForTask(task, kr, obj, krMonth);
+                task.milestoneId = mid;
+            }
+        });
+    }
 }
 
 // ============================================================
@@ -2552,9 +2744,12 @@ function buildSimpleRows(objectives) {
             };
         }
         const row = map[area];
+        const objCost = calculateObjectiveCost(obj);
         row.objCount++;
         row.startMonth = Math.min(row.startMonth, obj.startMonth || 1);
         row.endMonth   = Math.max(row.endMonth,   obj.endMonth   || 1);
+        row.hours = (row.hours || 0) + objCost.hours;
+        row.cost = (row.cost || 0) + objCost.cost;
         (obj.keyResults || []).forEach(kr => {
             row.krCount++;
             row.taskCount += (kr.tasks || []).length;
@@ -2564,6 +2759,21 @@ function buildSimpleRows(objectives) {
     return Object.values(map)
         .map(r => ({ ...r, startMonth: r.startMonth === Infinity ? 1 : r.startMonth }))
         .sort((a, b) => a.startMonth - b.startMonth);
+}
+
+function calculateObjectiveCost(obj) {
+    const area = obj?.area || 'production';
+    const rate = hourlyRates[area] || 0;
+    let days = 0;
+    let tasks = 0;
+    (obj?.keyResults || []).forEach(kr => {
+        (kr.tasks || []).forEach(task => {
+            tasks++;
+            days += task.estimatedDays || 2;
+        });
+    });
+    const hours = days * HOURS_PER_ESTIMATED_DAY;
+    return { tasks, days, hours, cost: hours * rate };
 }
 
 // ---- Parsers MD → estruturas JS ----
@@ -2697,7 +2907,7 @@ function parseMDSprints(md, subareaList) {
                         id: `${kr.id}_t${taskIdx + 1}`,
                         title,
                         description,
-                        estimatedDays: Math.min(3, Math.max(1, parseInt(taskMatch[2]))),
+                        estimatedDays: Math.min(2, Math.max(1, parseInt(taskMatch[2]))),
                         priority: taskMatch[3].trim(),
                         type: taskMatch[4].trim()
                     });
@@ -2771,12 +2981,16 @@ Projeto: ${sprintResult.overview.title} (${sprintResult.overview.genre})
 Duração: ${sprintResult.totalDurationMonths} meses
 Gênero: ${genreCtx.label}
 
+${roadmapPhaseContractText()}
+
 Objetivos de desenvolvimento:
 ${objectivesSummary}
 
-Com base nesse plano, defina 5-8 MARCOS (milestones) verificáveis do projeto.
+Com base nesse plano, defina exatamente 7 MARCOS (milestones) verificáveis do projeto.
 Marcos são momentos chave onde há uma entrega concreta e demonstrável — como uma build jogável, alpha, beta, etc.
 Devem ser distribuídos ao longo de todo o desenvolvimento.
+Use obrigatoriamente esta ordem de tipos: prototype, demo, vertical_slice, alpha, beta, gold, release.
+Nao coloque escopo de alpha no prototype; prototype testa mecanicas chave em recorte minimo. Demo precisa vender o diferencial para o publico com core loop curto. Vertical slice precisa ser uma fatia real do jogo, mas nao o jogo inteiro.
 
 Cada marco deve ter:
 - Nome claro, exibível e orientado a produção. Prefira títulos como "Protótipo Jogável", "Vertical Slice", "Alpha Interna", "Beta Fechada", "Gold Master", "Demo Pública" e "Release".
@@ -3025,7 +3239,45 @@ function showResults() {
  */
 function recomputeSchedule() {
     if (!analysisResult) return;
+    assignMilestoneIds(analysisResult.objectives || [], analysisResult.milestones || [], true);
     scheduledResult = scheduleRoadmap(analysisResult.objectives || [], teamConfig);
+    // Corrigir endMonth de cada objetivo com base no bin-packing real de dias
+    correctEndMonthsFromTasks(scheduledResult.objectives || []);
+}
+
+/**
+ * Recalcula obj.endMonth a partir do último dia real das tarefas (bin-packing).
+ * Isso garante que o gantt de cima bata com o de baixo.
+ */
+function correctEndMonthsFromTasks(objectives) {
+    const WPW = 5; // work days per week
+    const WPS = 2; // weeks per sprint
+    const SPM = 2; // sprints per month
+
+    objectives.forEach(obj => {
+        let lastDay = 0;
+        (obj.keyResults || []).forEach(kr => {
+            let curDay    = (kr.scheduledStartWeek ?? 0) * WPW;
+            let dayInWeek = 0;
+            (kr.tasks || []).forEach(task => {
+                const days = task.estimatedDays || 2;
+                // se semana cheia, pula para o início da próxima
+                if (dayInWeek >= WPW) {
+                    curDay   += WPW - dayInWeek;
+                    dayInWeek = 0;
+                }
+                const endDay = curDay + days;
+                lastDay   = Math.max(lastDay, endDay);
+                curDay    = endDay;
+                dayInWeek += days;
+                if (dayInWeek >= WPW) { dayInWeek = dayInWeek % WPW; }
+            });
+        });
+        if (lastDay > 0) {
+            const realEndWeek = Math.ceil(lastDay / WPW);
+            obj.endMonth = Math.max(1, Math.ceil(realEndWeek / (WPS * SPM)));
+        }
+    });
 }
 
 /**
@@ -3035,7 +3287,10 @@ function onTeamConfigChange() {
     recomputeSchedule();
     updateTeamConfigUI();
     try {
+        updateWorkspaceScopeSummary();
         populateTimeline();
+        populateScheduleDetail();
+        populateCosts();
         populateHierarchicalTasks();
     } catch (e) {
         console.error('Erro ao re-renderizar após mudança de equipe:', e);
@@ -3082,8 +3337,11 @@ function populateResults() {
     try {
         populateOverview();
         populateTeamConfigPanel();
+        populateWorkspaceScopeControls();
         populateTimeline();
+        populateScheduleDetail();
         populateMilestones();
+        populateCosts();
         populateEditalSummary();
         populateHierarchicalTasks();
         if (typeof workInit === 'function') workInit();
@@ -3128,7 +3386,7 @@ function populateTeamConfigPanel() {
                 <span class="team-area-dot" style="background:${color}"></span>
                 <span class="team-area-name">${AREA_LABELS[area]}</span>
             </div>
-            <input type="range" class="team-slider" min="1" max="5" value="${count}"
+            <input type="range" class="team-slider" min="1" max="12" value="${count}"
                 oninput="handleTeamSlider('${area}', this.value)"
                 ${!usedAreas.has(area) ? 'disabled' : ''}
             >
@@ -3244,20 +3502,270 @@ function countTotalTasks() {
 }
 
 // ============================================================
+// LISTA DE TAREFAS POR FASE (abaixo do gantt)
+// ============================================================
+
+let scheduleSelectedAreas = new Set(); // vazio = todas
+
+function toggleScheduleArea(area) {
+    if (scheduleSelectedAreas.has(area)) {
+        scheduleSelectedAreas.delete(area);
+    } else {
+        scheduleSelectedAreas.add(area);
+    }
+    document.querySelectorAll('.sch-area-chip').forEach(chip => {
+        chip.classList.toggle('active', scheduleSelectedAreas.has(chip.dataset.area));
+    });
+    populateScheduleDetail();
+}
+
+/** Ponto de entrada: popula filtro + gantt de tarefas */
+function populateScheduleDetail() {
+    renderScheduleAreaFilter();
+    renderTaskGantt();
+}
+
+/** Chips de filtro de área */
+function renderScheduleAreaFilter() {
+    const el = document.getElementById('scheduleAreaFilter');
+    if (!el || !analysisResult) return;
+    const usedAreas = new Set(getWorkspaceScopedObjectives().map(o => o.area).filter(Boolean));
+    const areas = Object.keys(AREA_LABELS).filter(a => usedAreas.has(a));
+    el.innerHTML = areas.map(area => `
+        <button class="sch-area-chip${scheduleSelectedAreas.has(area) ? ' active' : ''}"
+                data-area="${area}"
+                onclick="toggleScheduleArea('${area}')"
+                style="--chip-color:${AREA_COLORS[area] || '#6b7280'}">
+            <span class="chip-dot"></span>${AREA_LABELS[area]}
+        </button>
+    `).join('');
+}
+
+/**
+ * Gantt de tarefas: idêntico ao gantt de cima, mas uma linha por tarefa.
+ * Coluna esquerda = nome da tarefa (com dot de cor da área).
+ * Barra posicionada pela semana do KR pai, distribuída sequencialmente dentro do KR.
+ * Ordenação por fase (milestoneId) → semana → área. FLAG futuro: ordenar por área.
+ */
+function renderTaskGantt() {
+    const container = document.getElementById('scheduleDetailList');
+    if (!container || !analysisResult) return;
+    container.innerHTML = '';
+
+    const baseSrc = scheduledResult || { objectives: analysisResult.objectives || [], totalMonths: analysisResult.totalDurationMonths || 12 };
+    const allObjectives = getWorkspaceScopedObjectives(baseSrc.objectives || []);
+    const totalMonths = baseSrc.totalMonths || analysisResult.totalDurationMonths || 12;
+    const milestones = (analysisResult.milestones || []).slice().sort((a, b) => (a.month || 0) - (b.month || 0));
+
+    const activeAreas = scheduleSelectedAreas.size > 0
+        ? [...scheduleSelectedAreas]
+        : [...new Set(allObjectives.map(o => o.area).filter(Boolean))];
+
+    const objectives = allObjectives.filter(o => activeAreas.includes(o.area));
+
+    if (!objectives.length) {
+        container.innerHTML = '<p class="costs-empty">Nenhuma tarefa para exibir.</p>';
+        return;
+    }
+
+    // ── Constantes de layout em DIAS (granularidade diária) ─────
+    const WORK_DAYS_PER_WEEK  = 5;
+    const WEEKS_PER_SPRINT    = 2;
+    const SPRINTS_PER_MONTH   = 2;
+    const DAYS_PER_SPRINT     = WEEKS_PER_SPRINT * WORK_DAYS_PER_WEEK; // 10
+    const DAYS_PER_MONTH      = SPRINTS_PER_MONTH * DAYS_PER_SPRINT;   // 20
+    const DAY_COL_PX          = 8;  // cada dia útil = 8px
+    const WEEK_PX             = WORK_DAYS_PER_WEEK * DAY_COL_PX;       // 70px
+    const SPRINT_PX           = DAYS_PER_SPRINT * DAY_COL_PX;          // 140px
+    const totalSprints        = totalMonths * SPRINTS_PER_MONTH;
+    const totalWeeks          = totalSprints * WEEKS_PER_SPRINT;
+    const totalDaysAll        = totalWeeks * WORK_DAYS_PER_WEEK;
+    const totalPx             = totalDaysAll * DAY_COL_PX;
+    const totalYears          = Math.ceil(totalMonths / 12);
+    const totalQuarters       = Math.ceil(totalMonths / 3);
+
+    // ── Cabeçalho: Ano → Quarter → Sprint → Semana → Dias ───────
+    let yearCells = '';
+    for (let y = 1; y <= totalYears; y++) {
+        const mo = Math.min(12, totalMonths - (y - 1) * 12);
+        yearCells += `<div class="tl-header-year" style="width:${mo * DAYS_PER_MONTH * DAY_COL_PX}px">Ano ${y}</div>`;
+    }
+    let quarterCells = '';
+    for (let q = 1; q <= totalQuarters; q++) {
+        const mo = Math.min(3, totalMonths - (q - 1) * 3);
+        quarterCells += `<div class="tl-header-quarter" style="width:${mo * DAYS_PER_MONTH * DAY_COL_PX}px">Q${((q-1)%4)+1}</div>`;
+    }
+    let sprintCells = '';
+    for (let s = 1; s <= totalSprints; s++)
+        sprintCells += `<div class="tl-header-sprint" style="width:${SPRINT_PX}px">Sprint ${s}</div>`;
+    let weekCells = '';
+    for (let w = 1; w <= totalWeeks; w++) {
+        const isLast = w % WEEKS_PER_SPRINT === 0;
+        weekCells += `<div class="tl-header-week${isLast ? ' tl-week-last' : ''}" style="width:${WEEK_PX}px">S${((w-1)%WEEKS_PER_SPRINT)+1}</div>`;
+    }
+
+    // ── Divisores por semana/sprint/quarter ──────────────────────
+    let dividersHTML = '';
+    for (let q = 1; q < totalQuarters; q++)
+        dividersHTML += `<div class="quarter-divider" style="left:${q * 3 * DAYS_PER_MONTH * DAY_COL_PX}px"></div>`;
+    for (let s = 1; s < totalSprints; s++)
+        dividersHTML += `<div class="sprint-divider" style="left:${s * SPRINT_PX}px"></div>`;
+    for (let w = 1; w < totalWeeks; w++)
+        if (w % WEEKS_PER_SPRINT !== 0)
+            dividersHTML += `<div class="week-divider" style="left:${w * WEEK_PX}px"></div>`;
+    // divisores de dia (mais leves)
+    for (let d = 1; d < totalDaysAll; d++)
+        if (d % WORK_DAYS_PER_WEEK !== 0)
+            dividersHTML += `<div class="day-divider" style="left:${d * DAY_COL_PX}px"></div>`;
+
+    // ── Estrutura base ───────────────────────────────────────────
+    const labelsCol = document.createElement('div');
+    labelsCol.className = 'timeline-labels';
+
+    const labelHeader = document.createElement('div');
+    labelHeader.className = 'timeline-label-header';
+    labelHeader.textContent = `${totalMonths}m`;
+    labelsCol.appendChild(labelHeader);
+
+    const scrollWrapper = document.createElement('div');
+    scrollWrapper.className = 'timeline-bars-scroll';
+
+    const barsInner = document.createElement('div');
+    barsInner.className = 'timeline-bars-inner';
+    barsInner.style.width = `${totalPx}px`;
+
+    barsInner.innerHTML = `
+        <div class="timeline-header">
+            <div class="tl-header-row tl-row-years">${yearCells}</div>
+            <div class="tl-header-row tl-row-quarters">${quarterCells}</div>
+            <div class="tl-header-row tl-row-sprints">${sprintCells}</div>
+            <div class="tl-header-row tl-row-weeks">${weekCells}</div>
+
+        </div>
+    `;
+
+    // ── Coletar tarefas com bin-packing em dias ──────────────────
+    // Posição em dias: krStart (semana) * 5 dias/semana
+    const allTasks = [];
+
+    // Também rastreia o último dia real por objetivo para corrigir endMonth no gantt de cima
+    const objLastDay = new Map(); // obj.id → último _endDay real
+
+    objectives.forEach(obj => {
+        (obj.keyResults || []).forEach(kr => {
+            const krStartDay = (kr.scheduledStartWeek ?? 0) * WORK_DAYS_PER_WEEK;
+            const krTasks    = kr.tasks || [];
+            const mid0       = krTasks[0]?.milestoneId || milestones[milestones.length - 1]?.id;
+
+            let curDay       = krStartDay;
+            let dayInWeek    = 0;
+
+            krTasks.forEach(task => {
+                const days = task.estimatedDays || 2;
+                const mid  = task.milestoneId || mid0;
+                const mIdx = milestones.findIndex(m => m.id === mid);
+
+                if (dayInWeek >= WORK_DAYS_PER_WEEK) {
+                    curDay    += (WORK_DAYS_PER_WEEK - (dayInWeek % WORK_DAYS_PER_WEEK));
+                    dayInWeek  = 0;
+                }
+
+                const startDay = curDay;
+                const endDay   = startDay + days;
+
+                allTasks.push({
+                    ...task,
+                    area: obj.area,
+                    krTitle: kr.title,
+                    _startDay: startDay,
+                    _endDay: endDay,
+                    _milestoneIdx: mIdx >= 0 ? mIdx : 999,
+                });
+
+                // Rastrear último dia real do objetivo
+                objLastDay.set(obj.id, Math.max(objLastDay.get(obj.id) ?? 0, endDay));
+
+                dayInWeek += days;
+                if (dayInWeek >= WORK_DAYS_PER_WEEK) {
+                    curDay    += days;
+                    dayInWeek  = dayInWeek % WORK_DAYS_PER_WEEK;
+                } else {
+                    curDay += days;
+                }
+            });
+        });
+
+    });
+
+    // Ordenar: fase → dia de início → área
+    allTasks.sort((a, b) =>
+        a._milestoneIdx - b._milestoneIdx ||
+        a._startDay     - b._startDay     ||
+        a.area.localeCompare(b.area)
+    );
+
+    // ── Renderizar uma linha por tarefa ─────────────────────────
+    // Uma linha por tarefa, barra = quadradinhos de 4px por dia ocupado
+    const CELL_SIZE = DAY_COL_PX - 2; // quadradinho: quase a largura de 1 coluna de dia
+    const ROW_H = 8; // altura da linha (quadradinho 4px centralizado)
+    let lastMilestoneIdx = -1;
+
+    allTasks.forEach(task => {
+        const color    = AREA_COLORS[task.area] || '#6b7280';
+        const taskName = task.title || task.description || 'Tarefa';
+        const days     = task.estimatedDays || 2;
+        const title    = `${taskName} · ${task.krTitle || ''} · ${days}d`;
+
+
+        // Label da tarefa
+        const labelEl = document.createElement('div');
+        labelEl.className = 'category-label category-label--task';
+        labelEl.title = title;
+        labelEl.innerHTML = `
+            <span class="area-dot" style="background:${color}"></span>
+            <span class="category-label-text">${taskName}</span>
+        `;
+        labelsCol.appendChild(labelEl);
+
+        // Gerar um quadradinho por dia ocupado
+        let cellsHTML = '';
+        const GAP = 1; // px de margem horizontal em cada célula
+        for (let d = task._startDay; d < task._endDay; d++) {
+            const left = d * DAY_COL_PX + GAP;
+            const width = DAY_COL_PX - GAP * 2;
+            cellsHTML += `<div class="task-day-cell" style="left:${left}px;width:${width}px;background:${color};" title="${title}"></div>`;
+        }
+
+        const trackEl = document.createElement('div');
+        trackEl.className = 'timeline-category timeline-category--task';
+        trackEl.innerHTML = `
+            <div class="timeline-track timeline-track--task" style="width:${totalPx}px">
+                ${dividersHTML}
+                ${cellsHTML}
+            </div>
+        `;
+        barsInner.appendChild(trackEl);
+    });
+
+    scrollWrapper.appendChild(barsInner);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'timeline-scroll-wrapper';
+    wrapper.appendChild(labelsCol);
+    wrapper.appendChild(scrollWrapper);
+
+    container.appendChild(wrapper);
+}
+
+// ============================================================
 // TIMELINE — funções de renderização
 // ============================================================
 
 function setTimelineMode(mode) {
     timelineMode = mode;
-    // Botões antigos (dentro da timeline, se ainda renderizados)
-    document.querySelectorAll('.tl-mode-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.mode === mode);
+    document.querySelectorAll('[data-timeline-mode]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.timelineMode === mode);
     });
-    // Botões novos (no header do roadmap-card)
-    const btnSimple   = document.getElementById('btnSimple');
-    const btnDetailed = document.getElementById('btnDetailed');
-    if (btnSimple)   btnSimple.classList.toggle('active',   mode === 'simple');
-    if (btnDetailed) btnDetailed.classList.toggle('active', mode === 'detailed');
     populateTimeline();
 }
 
@@ -3270,14 +3778,20 @@ function populateTimeline() {
     // Os botões de modo agora ficam no header do roadmap-card (não mais dentro da timeline)
 
     // ── Fonte de dados ───────────────────────────────────────────
-    const src = scheduledResult || { objectives: analysisResult.objectives || [], totalMonths: analysisResult.totalDurationMonths || 12 };
+    const baseSrc = scheduledResult || { objectives: analysisResult.objectives || [], totalMonths: analysisResult.totalDurationMonths || 12 };
+    const src = {
+        ...baseSrc,
+        objectives: getWorkspaceScopedObjectives(baseSrc.objectives || [])
+    };
     const totalMonths = src.totalMonths || analysisResult.totalDurationMonths || 12;
 
-    // ── Constantes de layout ─────────────────────────────────────
+    // ── Constantes de layout — mesma base do gantt detalhado (dias) ─
+    const WORK_DAYS_PER_WEEK_U = 5;
     const WEEKS_PER_SPRINT  = 2;
     const SPRINTS_PER_MONTH = 2;
-    const WEEK_COL_PX       = 28;
-    const SPRINT_PX         = WEEKS_PER_SPRINT * WEEK_COL_PX;   // 56px
+    const DAY_COL_PX_U      = 8;                                       // igual ao gantt de baixo
+    const WEEK_COL_PX       = WORK_DAYS_PER_WEEK_U * DAY_COL_PX_U;   // 70px/semana
+    const SPRINT_PX         = WEEKS_PER_SPRINT * WEEK_COL_PX;         // 140px/sprint
     const totalSprints      = totalMonths * SPRINTS_PER_MONTH;
     const totalWeeksAll     = totalSprints * WEEKS_PER_SPRINT;
     const totalPx           = totalWeeksAll * WEEK_COL_PX;
@@ -3343,7 +3857,9 @@ function populateTimeline() {
     barsInner.appendChild(headerDiv);
 
     // ── Renderizar linhas conforme o modo ────────────────────────
-    if (timelineMode === 'simple') {
+    if (timelineMode === 'phase') {
+        renderPhaseRows(src.objectives, labelsCol, barsInner, dividersHTML, totalPx, SPRINTS_PER_MONTH, SPRINT_PX);
+    } else if (timelineMode === 'simple') {
         renderSimpleRows(src.objectives, labelsCol, barsInner, dividersHTML, totalPx, SPRINTS_PER_MONTH, SPRINT_PX);
     } else {
         renderDetailedRows(src.objectives, labelsCol, barsInner, dividersHTML, totalPx, SPRINTS_PER_MONTH, SPRINT_PX);
@@ -3385,12 +3901,106 @@ function renderSimpleRows(objectives, labelsCol, barsInner, dividersHTML, totalP
         trackEl.innerHTML = `
             <div class="timeline-track timeline-track--simple" style="width:${totalPx}px">
                 ${dividersHTML}
-                <div class="timeline-bar timeline-bar--simple"
+                 <div class="timeline-bar timeline-bar--simple"
                      style="left:${startPx}px; width:${widthPx}px; background:${row.color};"
-                     title="${row.label} · mês ${row.startMonth}–${row.endMonth} · ${row.taskCount} tarefas · ${row.objCount} sub-áreas">
+                     title="${row.label} · mês ${row.startMonth}–${row.endMonth} · ${row.taskCount} tarefas · ${formatNumberBR(row.hours)}h · ${formatCurrencyBRL(row.cost)}">
                     <span class="bar-label-simple">
                         <strong>${row.label}</strong>
-                        <span>${row.taskCount} tarefas · ${row.objCount} sub-área${row.objCount !== 1 ? 's' : ''} · ${dur} mês${dur !== 1 ? 'es' : ''}</span>
+                        <span>${row.taskCount} tarefas · ${formatNumberBR(row.hours)}h · ${formatCurrencyBRL(row.cost)}</span>
+                    </span>
+                </div>
+            </div>
+        `;
+        barsInner.appendChild(trackEl);
+    });
+}
+
+/** Visão POR FASE: uma linha por milestone/fase com custo e carga */
+function buildPhaseRows(objectives) {
+    const milestones = (analysisResult?.milestones || []).slice().sort((a, b) => (a.month || 0) - (b.month || 0));
+    const costSummary = buildCostSummary();
+    const costByPhase = new Map((costSummary?.phases || []).map(phase => [phase.id, phase]));
+
+    let previousMonth = 1;
+    return milestones.map((milestone, index) => {
+        const matchingObjectives = [];
+        let taskCount = 0;
+        let krCount = 0;
+
+        (objectives || []).forEach(obj => {
+            let objTasks = 0;
+            (obj.keyResults || []).forEach(kr => {
+                const krTasks = (kr.tasks || []).filter(task => task.milestoneId === milestone.id).length;
+                if (krTasks > 0) {
+                    objTasks += krTasks;
+                    krCount++;
+                }
+            });
+            if (objTasks > 0) {
+                taskCount += objTasks;
+                matchingObjectives.push(obj);
+            }
+        });
+
+        const starts = matchingObjectives.map(obj => obj.startMonth || previousMonth);
+        const ends = matchingObjectives.map(obj => obj.endMonth || milestone.month || previousMonth);
+        const startMonth = starts.length ? Math.min(...starts) : previousMonth;
+        const endMonth = ends.length ? Math.max(...ends) : (milestone.month || startMonth);
+        previousMonth = Math.max(previousMonth + 1, (milestone.month || endMonth) + 1);
+
+        const phaseCost = costByPhase.get(milestone.id) || { hours: 0, cost: 0, days: 0 };
+        return {
+            id: milestone.id,
+            title: milestone.title,
+            type: milestone.type,
+            startMonth,
+            endMonth: Math.max(startMonth, endMonth),
+            taskCount,
+            krCount,
+            objCount: matchingObjectives.length,
+            hours: phaseCost.hours || 0,
+            cost: phaseCost.cost || 0,
+        };
+    });
+}
+
+function renderPhaseRows(objectives, labelsCol, barsInner, dividersHTML, totalPx, SPM, SPRINT_PX) {
+    const rows = buildPhaseRows(objectives);
+    const typeColors = {
+        prototype: '#6366f1',
+        demo: '#06b6d4',
+        vertical_slice: '#8b5cf6',
+        alpha: '#3b82f6',
+        beta: '#10b981',
+        gold: '#f59e0b',
+        release: '#ef4444'
+    };
+
+    rows.forEach(row => {
+        const color = typeColors[row.type] || '#6b7280';
+        const startPx = (row.startMonth - 1) * SPM * SPRINT_PX;
+        const rawPx = (row.endMonth - row.startMonth + 1) * SPM * SPRINT_PX;
+        const widthPx = Math.max(rawPx, SPRINT_PX);
+        const labelEl = document.createElement('div');
+        labelEl.className = 'category-label category-label--phase';
+        labelEl.title = `${row.title} · mês ${row.startMonth}–${row.endMonth}`;
+        labelEl.innerHTML = `
+            <span class="area-dot" style="background:${color}"></span>
+            <span class="category-label-text">${row.title}</span>
+        `;
+        labelsCol.appendChild(labelEl);
+
+        const trackEl = document.createElement('div');
+        trackEl.className = 'timeline-category timeline-category--phase';
+        trackEl.innerHTML = `
+            <div class="timeline-track timeline-track--phase" style="width:${totalPx}px">
+                ${dividersHTML}
+                <div class="timeline-bar timeline-bar--phase"
+                     style="left:${startPx}px; width:${widthPx}px; background:${color};"
+                     title="${row.title} · ${row.taskCount} tarefas · ${formatNumberBR(row.hours)}h · ${formatCurrencyBRL(row.cost)}">
+                    <span class="bar-label-simple">
+                        <strong>${row.title}</strong>
+                        <span>${row.taskCount} tarefas · ${formatNumberBR(row.hours)}h · ${formatCurrencyBRL(row.cost)}</span>
                     </span>
                 </div>
             </div>
@@ -3409,6 +4019,7 @@ function renderDetailedRows(objectives, labelsCol, barsInner, dividersHTML, tota
         const taskCount = (obj.keyResults || []).reduce((t, kr) => t + (kr.tasks || []).length, 0);
         const sprintCount = (obj.keyResults || []).reduce((s, kr) => s + (kr.sprintCount || 1), 0);
         const durationLabel = `${sprintCount} sprint${sprintCount !== 1 ? 's' : ''}`;
+        const objCost = calculateObjectiveCost(obj);
 
         const labelEl = document.createElement('div');
         labelEl.className = 'category-label';
@@ -3424,10 +4035,10 @@ function renderDetailedRows(objectives, labelsCol, barsInner, dividersHTML, tota
         row.innerHTML = `
             <div class="timeline-track" style="width:${totalPx}px">
                 ${dividersHTML}
-                <div class="timeline-bar"
+                 <div class="timeline-bar"
                      style="left:${startPx}px; width:${widthPx}px; background:${color};"
-                     title="${obj.title} · mês ${obj.startMonth}–${obj.endMonth} · ${taskCount} tarefas · ${durationLabel}">
-                    <span class="bar-label">${taskCount}t · ${durationLabel}</span>
+                     title="${obj.title} · mês ${obj.startMonth}–${obj.endMonth} · ${taskCount} tarefas · ${durationLabel} · ${formatNumberBR(objCost.hours)}h · ${formatCurrencyBRL(objCost.cost)}">
+                    <span class="bar-label">${taskCount}t · ${durationLabel} · ${formatCurrencyBRL(objCost.cost)}</span>
                 </div>
             </div>
         `;
@@ -3646,6 +4257,159 @@ function populateMilestones() {
 
         grid.appendChild(el);
     });
+}
+
+// ============================================================
+// CUSTOS POR FASE
+// ============================================================
+function formatCurrencyBRL(value) {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+        maximumFractionDigits: 0
+    }).format(Number(value) || 0);
+}
+
+function formatNumberBR(value, digits = 0) {
+    return new Intl.NumberFormat('pt-BR', {
+        maximumFractionDigits: digits
+    }).format(Number(value) || 0);
+}
+
+function buildCostSummary() {
+    if (!analysisResult) return null;
+    const milestones = analysisResult.milestones || [];
+    const objectives = analysisResult.objectives || [];
+    if (!milestones.length || !objectives.length) return null;
+
+    if (typeof assignMilestoneIds === 'function') {
+        assignMilestoneIds(objectives, milestones, true);
+    }
+
+    const calculator = (typeof WorkBacklogHelpers !== 'undefined' && WorkBacklogHelpers.calculatePhaseCosts)
+        ? WorkBacklogHelpers.calculatePhaseCosts
+        : null;
+    if (!calculator) return null;
+
+    return calculator({
+        objectives,
+        milestones,
+        hourlyRates,
+        hoursPerDay: HOURS_PER_ESTIMATED_DAY,
+    });
+}
+
+function populateCosts() {
+    const content = document.getElementById('costsContent');
+    if (!content || !analysisResult) return;
+
+    const costResult = buildCostSummary();
+    if (!costResult) {
+        content.innerHTML = '<p class="costs-empty">Calculadora de custos não disponível.</p>';
+        return;
+    }
+
+    const areaRows = Object.entries(costResult.areas)
+        .sort((a, b) => b[1].cost - a[1].cost)
+        .map(([area, data]) => {
+            const label = AREA_LABELS[area] || area;
+            const color = AREA_COLORS[area] || '#6b7280';
+            const rate = hourlyRates[area] || 0;
+            const teamSize = teamConfig[area] || 1;
+            return `
+                <div class="cost-area-row">
+                    <span class="area-dot" style="background:${color}"></span>
+                    <span class="cost-area-name">${label}</span>
+                    <label class="cost-inline-control">
+                        <span>R$/h</span>
+                        <input type="number" min="0" step="5" value="${rate}" onchange="handleHourlyRateChange('${area}', this.value)">
+                    </label>
+                    <label class="cost-inline-control">
+                        <span>Equipe</span>
+                        <input type="number" min="1" max="12" step="1" value="${teamSize}" onchange="handleCostTeamChange('${area}', this.value)">
+                    </label>
+                    <strong>${formatCurrencyBRL(data.cost)}</strong>
+                </div>
+            `;
+        }).join('');
+
+    const phaseRows = costResult.phases.map((phase, idx) => {
+        const areaBreakdown = Object.entries(phase.areas)
+            .sort((a, b) => b[1].cost - a[1].cost)
+            .map(([area, data]) => {
+                const label = AREA_LABELS[area] || area;
+                const color = AREA_COLORS[area] || '#6b7280';
+                return `
+                    <div class="cost-phase-area">
+                        <span class="area-dot" style="background:${color}"></span>
+                        <span>${label}</span>
+                        <span>${formatNumberBR(data.hours)}h</span>
+                        <strong>${formatCurrencyBRL(data.cost)}</strong>
+                    </div>
+                `;
+            }).join('');
+
+        return `
+            <div class="cost-phase-row ${idx === 0 ? 'open' : ''}">
+                <button class="cost-phase-header" type="button" onclick="this.closest('.cost-phase-row').classList.toggle('open')">
+                    <div>
+                        <strong>${phase.title}</strong>
+                        <span>${phase.type} · ${phase.tasks} tarefas · ${formatNumberBR(phase.hours)}h</span>
+                    </div>
+                    <div class="cost-phase-total">
+                        ${formatCurrencyBRL(phase.cost)}
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                </button>
+                <div class="cost-phase-body">
+                    ${areaBreakdown || '<p class="costs-empty">Sem tarefas nesta fase.</p>'}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    content.innerHTML = `
+        <div class="costs-summary">
+            <div class="costs-total-card">
+                <span>Custo estimado total</span>
+                <strong>${formatCurrencyBRL(costResult.total.cost)}</strong>
+                <small>${formatNumberBR(costResult.total.hours)}h · ${formatNumberBR(costResult.total.days)} dias estimados · ${costResult.total.tasks} tarefas</small>
+            </div>
+            <div class="costs-formula">
+                <i class="fas fa-calculator"></i>
+                <span>Formula: dias estimados x ${HOURS_PER_ESTIMATED_DAY}h x valor/hora da area</span>
+            </div>
+        </div>
+        <div class="costs-section">
+            <h4>Por area</h4>
+            <div class="cost-area-list">${areaRows}</div>
+        </div>
+        <div class="costs-section">
+            <h4>Por fase</h4>
+            <div class="cost-phase-list">${phaseRows}</div>
+        </div>
+    `;
+}
+
+function handleHourlyRateChange(area, rawValue) {
+    const value = Math.max(0, Number(rawValue) || 0);
+    hourlyRates[area] = value;
+    populateTimeline();
+    populateCosts();
+    saveApplicationState();
+    scheduleWorkspaceAutoSave();
+}
+
+function handleCostTeamChange(area, rawValue) {
+    const value = Math.max(1, Math.min(12, parseInt(rawValue) || 1));
+    teamConfig[area] = value;
+    const slider = document.querySelector(`.team-slider-row[data-area="${area}"] .team-slider`);
+    if (slider) slider.value = value;
+    const valEl = document.getElementById(`team-val-${area}`);
+    if (valEl) valEl.innerHTML = `${value}<small>${value === 1 ? ' pessoa' : ' pessoas'}</small>`;
+    const summaryCount = document.getElementById(`team-summary-count-${area}`);
+    if (summaryCount) summaryCount.textContent = value;
+    onTeamConfigChange();
 }
 
 // ============================================================
@@ -4060,6 +4824,7 @@ function loadTaskStates() {
 // ============================================================
 function exportResults() {
     if (!analysisResult) return;
+    const costSummary = buildCostSummary();
 
     const exportData = {
         metadata: {
@@ -4073,6 +4838,10 @@ function exportResults() {
         overview: analysisResult.overview,
         milestones: analysisResult.milestones || [],
         editalSummary: analysisResult.editalSummary || null,
+        costSummary,
+        hourlyRates: { ...hourlyRates },
+        hoursPerEstimatedDay: HOURS_PER_ESTIMATED_DAY,
+        workspaceScope: serializeWorkspaceScope(),
         objectives: (analysisResult.objectives || []).map(obj => ({
             id: obj.id,
             title: obj.title,
@@ -4091,7 +4860,8 @@ function exportResults() {
                     title: t.title,
                     estimatedDays: t.estimatedDays,
                     priority: t.priority,
-                    type: t.type
+                    type: t.type,
+                    ...(t.milestoneId ? { milestoneId: t.milestoneId } : {})
                 }))
             }))
         }))
@@ -4116,6 +4886,7 @@ function resetToUpload() {
     document.body.classList.remove('results-workspace-mode');
     currentFile = null;
     analysisResult = null;
+    resetWorkspaceScopeState();
     clearFile();
     clearApplicationState();
     // Ao voltar para upload sem projeto ativo, limpa referência do projeto ativo
@@ -4344,6 +5115,9 @@ function saveApplicationState() {
     try {
         const state = {
             analysisResult,
+            teamConfig: { ...teamConfig },
+            hourlyRates: { ...hourlyRates },
+            workspaceScope: serializeWorkspaceScope(),
             currentFile: currentFile ? {
                 name: currentFile.name,
                 size: currentFile.size,
@@ -4381,6 +5155,9 @@ function restoreApplicationState() {
         }
         if (state.analysisResult) {
             analysisResult = state.analysisResult;
+            if (state.teamConfig) Object.assign(teamConfig, state.teamConfig);
+            if (state.hourlyRates) Object.assign(hourlyRates, state.hourlyRates);
+            restoreWorkspaceScope(state.workspaceScope);
             if (state.currentFile) displayFileInfo(state.currentFile);
             showResults();
             showNotification('Análise anterior restaurada!', 'success');
@@ -4699,6 +5476,15 @@ Sem texto extra fora do JSON.`;
     aiEnhanceSetProgress(allTasks.length, allTasks.length, `Concluído! ${doneCount} tarefas melhoradas${errorCount ? `, ${errorCount} erros` : ''}.`);
     aiEnhanceLogAdd(`\n✨ Melhoria concluída! ${doneCount} de ${allTasks.length} tarefas atualizadas.`, 'ok');
 
+    // Reatribui milestoneId a tarefas que ainda não têm um (preserva as que já têm).
+    // Isso garante que projetos importados ou gerados antes desta versão também recebam
+    // o campo, sem remover IDs atribuídos manualmente ou pelo usuário.
+    const milestones = analysisResult.milestones || [];
+    if (milestones.length > 0) {
+        assignMilestoneIds(analysisResult.objectives || [], milestones, true);
+        aiEnhanceLogAdd('🏁 milestoneId atribuído às tarefas sem marco definido.', 'info');
+    }
+
     // Salva o analysisResult atualizado em ambos os sistemas de persistência:
     // saveCurrentProject → sistema de projetos (fonte principal)
     // saveApplicationState → estado legado (evita que reload sobrescreva com versão antiga)
@@ -4797,6 +5583,8 @@ function saveCurrentProject(options = {}) {
     const projectData = {
         analysisResult: JSON.parse(JSON.stringify(analysisResult)), // deep clone
         teamConfig: { ...teamConfig },
+        hourlyRates: { ...hourlyRates },
+        workspaceScope: serializeWorkspaceScope(),
         scheduledResult: scheduledResult ? JSON.parse(JSON.stringify(scheduledResult)) : null,
         taskProgress,
         boardSelection,
@@ -4847,6 +5635,10 @@ function loadProject(projectId, options = {}) {
     if (data.teamConfig) {
         Object.assign(teamConfig, data.teamConfig);
     }
+    if (data.hourlyRates) {
+        Object.assign(hourlyRates, data.hourlyRates);
+    }
+    restoreWorkspaceScope(data.workspaceScope);
 
     // Restaura progresso de tarefas
     if (data.taskProgress) {
@@ -5169,6 +5961,8 @@ function handleImportedJson(json, filename) {
     let detected = null;
     let analysisData = null;
     let teamData = null;
+    let hourlyRateData = null;
+    let workspaceScopeData = null;
     let taskProgressData = null;
     let boardSelectionData = null;
     let projectName = filename.replace(/\.json$/i, '');
@@ -5178,6 +5972,8 @@ function handleImportedJson(json, filename) {
         detected = 'projeto_salvo';
         analysisData = json.data.analysisResult;
         teamData = json.data.teamConfig || null;
+        hourlyRateData = json.data.hourlyRates || null;
+        workspaceScopeData = json.data.workspaceScope || null;
         taskProgressData = json.data.taskProgress || null;
         boardSelectionData = json.data.boardSelection || null;
         projectName = json.name || projectName;
@@ -5186,6 +5982,8 @@ function handleImportedJson(json, filename) {
     else if (json.metadata && json.objectives) {
         detected = 'export_producer';
         analysisData = normalizeExportToAnalysis(json);
+        hourlyRateData = json.hourlyRates || json.costSummary?.hourlyRates || null;
+        workspaceScopeData = json.workspaceScope || null;
     }
     // Formato C: analysisResult puro
     else if (json.overview && json.objectives) {
@@ -5238,7 +6036,7 @@ function handleImportedJson(json, filename) {
     document.getElementById('importModalWarning').textContent = warning;
 
     // Guarda dados para confirmar
-    _pendingImportData = { analysisData, teamData, taskProgressData, boardSelectionData, projectName: title };
+    _pendingImportData = { analysisData, teamData, hourlyRateData, workspaceScopeData, taskProgressData, boardSelectionData, projectName: title };
 
     document.getElementById('importConfirmBtn').onclick = confirmImport;
     document.getElementById('importModalOverlay').classList.add('active');
@@ -5246,11 +6044,13 @@ function handleImportedJson(json, filename) {
 
 function confirmImport() {
     if (!_pendingImportData) return;
-    const { analysisData, teamData, taskProgressData, boardSelectionData, projectName } = _pendingImportData;
+    const { analysisData, teamData, hourlyRateData, workspaceScopeData, taskProgressData, boardSelectionData, projectName } = _pendingImportData;
 
     // Aplica ao estado global
     analysisResult = analysisData;
     if (teamData) Object.assign(teamConfig, teamData);
+    if (hourlyRateData) Object.assign(hourlyRates, hourlyRateData);
+    restoreWorkspaceScope(workspaceScopeData);
 
     // Desvincula de projeto ativo (é um import novo)
     setActiveProjectId(null);
@@ -5287,6 +6087,7 @@ function normalizeExportToAnalysis(exportJson) {
         totalDurationMonths: meta.totalMonths || 12,
         milestones: exportJson.milestones || [],
         editalSummary: exportJson.editalSummary || null,
+        costSummary: exportJson.costSummary || null,
         objectives: (exportJson.objectives || []).map(obj => ({
             id: obj.id || ('obj_' + Math.random().toString(36).slice(2)),
             title: obj.title || '',
@@ -5308,6 +6109,7 @@ function normalizeExportToAnalysis(exportJson) {
                     points: t.estimatedDays || 2,
                     priority: t.priority || 'medium',
                     type: t.type || 'feature',
+                    ...(t.milestoneId ? { milestoneId: t.milestoneId } : {})
                 }))
             }))
         }))
@@ -5345,7 +6147,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let workSelectedRoles = new Set(['programming', 'art', 'design', 'audio', 'qa']);
 let workSelectedMilestone = null; // null = todos; string = id do marco filtrado
-let backlogGroupMode = 'sprint'; // 'sprint' = agrupado por sprint | 'task' = agrupado por KR/área
+let backlogGroupMode = 'task'; // fixo: agrupado por KR/área (modo por tarefa)
 let kanbanDraggedTaskId = null;
 let kanbanDraggedFromCol = null;
 let kanbanTaskStates = {};
@@ -5354,8 +6156,8 @@ let workspaceActiveTab = 'timeline';
 let workspaceActiveDrawer = null;
 let workspaceAutoSaveTimer = null;
 
-const ALL_ROLES = ['programming', 'art', 'design', 'audio', 'qa'];
-const ROLE_LABELS = { programming:'Programador', art:'Artista', design:'Designer', audio:'Áudio', qa:'QA' };
+const ALL_ROLES = ['programming', 'art', 'design', 'audio', 'qa', 'production'];
+const ROLE_LABELS = { programming:'Programador', art:'Artista', design:'Designer', audio:'Áudio', qa:'QA', production:'Produção' };
 
 // ── Persistência ──────────────────────────────────────────────
 function kanbanStatesKey() {
@@ -5398,7 +6200,7 @@ function backlogSaveFilters() {
         const state = {
             roles: [...workSelectedRoles],
             milestone: workSelectedMilestone,
-            groupMode: backlogGroupMode
+            scope: serializeWorkspaceScope(),
         };
         localStorage.setItem(backlogFiltersKey(), JSON.stringify(state));
     } catch {}
@@ -5412,7 +6214,12 @@ function backlogLoadFilters() {
             workSelectedRoles = new Set(state.roles.filter(r => ALL_ROLES.includes(r)));
         }
         if (state.milestone) workSelectedMilestone = state.milestone;
-        if (state.groupMode) backlogGroupMode = state.groupMode;
+        if (state.scope) restoreWorkspaceScope(state.scope);
+        else restoreWorkspaceScope({
+            areas: workSelectedRoles.size === ALL_ROLES.length ? [] : [...workSelectedRoles],
+            milestones: workSelectedMilestone ? [workSelectedMilestone] : [],
+        });
+        // groupMode removido — backlog fixo em modo "por tarefa"
     } catch {}
 }
 
@@ -5438,8 +6245,10 @@ function workGetBoardTaskRefs() {
     const refs = [];
     const objList = (scheduledResult || analysisResult)?.objectives || [];
     objList.forEach(obj => {
+        if (workspaceScopeAreas.size > 0 && !workspaceScopeAreas.has(obj.area)) return;
         (obj.keyResults || []).forEach(kr => {
             (kr.tasks || []).forEach(task => {
+                if (workspaceScopeMilestones.size > 0 && !workspaceScopeMilestones.has(task.milestoneId)) return;
                 const key = workTaskKey(obj.id, kr.id, task.id);
                 if (workBoardSelections[key]) refs.push({ key, obj, kr, task });
             });
@@ -5471,12 +6280,14 @@ function workToggleBoardTask(e, objId, krId, taskId) {
     scheduleWorkspaceAutoSave();
     workRefreshCurrentView();
 }
-function workToggleBoardKr(e, objId, krId) {
+function workToggleBoardKr(e, objId, krId, milestoneId = null) {
     if (e) e.stopPropagation();
     const obj = ((scheduledResult || analysisResult)?.objectives || []).find(o => o.id === objId);
     const kr = obj?.keyResults?.find(k => k.id === krId);
     if (!obj || !kr) return;
-    const refs = (kr.tasks || []).map(task => ({ obj, kr, task }));
+    const refs = (kr.tasks || [])
+        .filter(task => !milestoneId || task.milestoneId === milestoneId)
+        .map(task => ({ obj, kr, task }));
     const allSelected = refs.length > 0 && refs.every(ref => workIsBoardTaskSelected(obj.id, kr.id, ref.task.id));
     workSetBoardTasks(refs, !allSelected);
     workRefreshCurrentView();
@@ -5502,10 +6313,15 @@ function workInit() {
     if (!analysisResult) return;
     kanbanLoadStates();
     workLoadBoardSelections();
-    workSelectedRoles = new Set(ALL_ROLES);
-    workSelectedMilestone = null;
-    backlogGroupMode = 'sprint';
-    backlogLoadFilters(); // restaura área e marco selecionados
+    try {
+        const raw = localStorage.getItem(backlogFiltersKey());
+        const state = raw ? JSON.parse(raw) : null;
+        if (state?.groupMode) backlogGroupMode = state.groupMode;
+    } catch {
+        backlogGroupMode = 'sprint';
+    }
+    workspaceScopeSyncLegacyFilters();
+    populateWorkspaceScopeControls();
     workUpdateAvatarUI();
     workSetView('backlog');
     setWorkspaceTab('timeline');
@@ -5525,8 +6341,148 @@ function syncWorkspaceTab(tab) {
 
 function setWorkspaceTab(tab) {
     syncWorkspaceTab(tab);
+    if (tab === 'timeline') { populateTimeline(); populateScheduleDetail(); }
     if (tab === 'backlog') workSetView('backlog');
     if (tab === 'board') workSetView('board');
+}
+
+function getWorkspaceScopedObjectives(objectives = (scheduledResult || analysisResult)?.objectives || []) {
+    return (objectives || []).map(obj => {
+        if (workspaceScopeAreas.size > 0 && !workspaceScopeAreas.has(obj.area)) return null;
+        const scopedKrs = (obj.keyResults || []).map(kr => {
+            const tasks = (kr.tasks || []).filter(task => workspaceScopeMilestones.size === 0 || workspaceScopeMilestones.has(task.milestoneId));
+            if (!tasks.length) return null;
+            return { ...kr, tasks };
+        }).filter(Boolean);
+        if (!scopedKrs.length) return null;
+        return { ...obj, keyResults: scopedKrs };
+    }).filter(Boolean);
+}
+
+function resetWorkspaceScopeState() {
+    workspaceScopeAreas = new Set();
+    workspaceScopeMilestones = new Set();
+    workspaceScopeSyncLegacyFilters();
+}
+
+function serializeWorkspaceScope() {
+    return {
+        areas: [...workspaceScopeAreas],
+        milestones: [...workspaceScopeMilestones],
+    };
+}
+
+function restoreWorkspaceScope(scope) {
+    if (!scope) {
+        resetWorkspaceScopeState();
+        return;
+    }
+
+    if (Array.isArray(scope.areas)) {
+        workspaceScopeAreas = new Set(scope.areas.filter(area => ALL_ROLES.includes(area)));
+    } else if (scope.area && scope.area !== 'all') {
+        workspaceScopeAreas = new Set([scope.area]);
+    } else {
+        workspaceScopeAreas = new Set();
+    }
+
+    if (Array.isArray(scope.milestones)) {
+        workspaceScopeMilestones = new Set(scope.milestones.filter(Boolean));
+    } else if (scope.milestone) {
+        workspaceScopeMilestones = new Set([scope.milestone]);
+    } else {
+        workspaceScopeMilestones = new Set();
+    }
+
+    workspaceScopeSyncLegacyFilters();
+}
+
+function getWorkspaceScopeCounts() {
+    const scoped = getWorkspaceScopedObjectives((scheduledResult || analysisResult)?.objectives || []);
+    const tasks = scoped.reduce((sum, obj) =>
+        sum + (obj.keyResults || []).reduce((krSum, kr) => krSum + (kr.tasks || []).length, 0), 0);
+    return { objectives: scoped.length, tasks };
+}
+
+function populateWorkspaceScopeControls() {
+    if (!analysisResult) return;
+    const areaChips = document.getElementById('workspaceAreaChips');
+    const milestoneChips = document.getElementById('workspaceMilestoneChips');
+    if (!areaChips || !milestoneChips) return;
+
+    const usedAreas = [...new Set((analysisResult.objectives || []).map(obj => obj.area || 'production'))];
+    workspaceScopeAreas = new Set([...workspaceScopeAreas].filter(area => usedAreas.includes(area)));
+    const areaIcons = { programming:'💻', art:'🎨', design:'📋', audio:'🎵', qa:'🧪', production:'📊' };
+    areaChips.innerHTML = usedAreas.map(area => {
+            const color = AREA_COLORS[area] || '#6b7280';
+            const active = workspaceScopeAreas.has(area);
+            return `<button class="workspace-scope-chip workspace-scope-area-chip ${active ? 'active' : ''}" type="button" onclick="toggleWorkspaceScopeArea('${area}')" style="--chip-color:${color}" title="${AREA_LABELS[area] || area}">
+                <span>${areaIcons[area] || '📌'}</span>
+            </button>`;
+        }).join('');
+
+    const milestones = workSortMilestonesForFilter(analysisResult.milestones || []);
+    const milestoneIds = milestones.map(ms => ms.id);
+    workspaceScopeMilestones = new Set([...workspaceScopeMilestones].filter(id => milestoneIds.includes(id)));
+    const typeIcons = { prototype:'🔬', demo:'🎬', vertical_slice:'🎮', alpha:'⚡', beta:'🧪', gold:'🏆', release:'🚀' };
+    const typeShortLabels = { prototype:'Proto', demo:'Demo', vertical_slice:'Slice', alpha:'Alpha', beta:'Beta', gold:'Gold', release:'Launch' };
+    milestoneChips.innerHTML = milestones.map(ms => {
+            const active = workspaceScopeMilestones.has(ms.id);
+            return `<button class="workspace-scope-chip workspace-scope-phase-chip ${active ? 'active' : ''}" type="button" onclick="toggleWorkspaceScopeMilestone('${ms.id}')" title="${ms.title || ms.type || ms.id}">
+                <span>${typeIcons[ms.type] || '🏁'}</span>
+                ${typeShortLabels[ms.type] || ms.title || ms.type || ms.id}
+            </button>`;
+        }).join('');
+
+    updateWorkspaceScopeSummary();
+}
+
+function updateWorkspaceScopeSummary() {
+    const summary = document.getElementById('workspaceScopeSummary');
+    if (!summary || !analysisResult) return;
+    const counts = getWorkspaceScopeCounts();
+    summary.textContent = `${counts.tasks} tarefas · ${counts.objectives} objetivos`;
+}
+
+function refreshWorkspaceScopeViews() {
+    populateWorkspaceScopeControls();
+    populateTimeline();
+    populateScheduleDetail();
+    populateCosts();
+    if (typeof workRefreshCurrentView === 'function') workRefreshCurrentView();
+}
+
+function toggleWorkspaceScopeArea(area) {
+    if (workspaceScopeAreas.has(area)) workspaceScopeAreas.delete(area);
+    else workspaceScopeAreas.add(area);
+    workspaceScopeSyncLegacyFilters();
+    backlogSaveFilters();
+    refreshWorkspaceScopeViews();
+    scheduleWorkspaceAutoSave();
+}
+
+function toggleWorkspaceScopeMilestone(milestoneId) {
+    if (workspaceScopeMilestones.has(milestoneId)) workspaceScopeMilestones.delete(milestoneId);
+    else workspaceScopeMilestones.add(milestoneId);
+    workspaceScopeSyncLegacyFilters();
+    backlogSaveFilters();
+    refreshWorkspaceScopeViews();
+    scheduleWorkspaceAutoSave();
+}
+
+function resetWorkspaceScope() {
+    workspaceScopeAreas = new Set();
+    workspaceScopeMilestones = new Set();
+    workspaceScopeSyncLegacyFilters();
+    backlogSaveFilters();
+    refreshWorkspaceScopeViews();
+    scheduleWorkspaceAutoSave();
+}
+
+function workspaceScopeSyncLegacyFilters() {
+    workSelectedRoles = workspaceScopeAreas.size === 0 ? new Set(ALL_ROLES) : new Set(workspaceScopeAreas);
+    workSelectedMilestone = workspaceScopeMilestones.size === 1 ? [...workspaceScopeMilestones][0] : null;
+    workUpdateAvatarUI();
 }
 
 function openWorkspaceDrawer(panel) {
@@ -5606,21 +6562,27 @@ function workToggleRole(role) {
     } else {
         workSelectedRoles.add(role);
     }
+    workspaceScopeAreas = workSelectedRoles.size === ALL_ROLES.length ? new Set() : new Set(workSelectedRoles);
     backlogSaveFilters();
+    populateWorkspaceScopeControls();
     workUpdateAvatarUI();
     workRefreshCurrentView();
 }
 
 function workSelectAllRoles() {
     workSelectedRoles = new Set(ALL_ROLES);
+    workspaceScopeAreas = new Set();
     backlogSaveFilters();
+    populateWorkspaceScopeControls();
     workUpdateAvatarUI();
     workRefreshCurrentView();
 }
 
 function workClearRoles() {
     workSelectedRoles = new Set([ALL_ROLES[0]]);
+    workspaceScopeAreas = new Set([ALL_ROLES[0]]);
     backlogSaveFilters();
+    populateWorkspaceScopeControls();
     workUpdateAvatarUI();
     workRefreshCurrentView();
 }
@@ -5699,17 +6661,26 @@ function workGetSprintGroupLabel(sprintNumber) {
     return Number(sprintNumber) > 0 ? `Sprint ${sprintNumber}` : 'Selecionar tudo';
 }
 
-function workBuildBacklogItemsForMilestoneFilter(objectives, milestones, selectedRoles, selectedMilestone) {
+function workBuildBacklogItemsForMilestoneFilter(objectives, milestones, selectedRoles, selectedMilestones) {
     const items = [];
+    const milestoneMap = new Map((milestones || []).map(ms => [ms.id, ms]));
     (objectives || []).forEach(obj => {
         if (selectedRoles && !selectedRoles.has(obj.area)) return;
 
-        const milestone = workGetMilestoneForObjective(obj, milestones);
-        if (!milestone) return;
-        if (selectedMilestone && milestone.id !== selectedMilestone) return;
-
         (obj.keyResults || []).forEach(kr => {
-            items.push({ obj, kr, ms: milestone });
+            const tasksByMilestone = new Map();
+            (kr.tasks || []).forEach(task => {
+                const taskMilestoneId = task.milestoneId || workGetMilestoneForObjective(obj, milestones)?.id;
+                if (selectedMilestones && selectedMilestones.size > 0 && !selectedMilestones.has(taskMilestoneId)) return;
+                if (!tasksByMilestone.has(taskMilestoneId)) tasksByMilestone.set(taskMilestoneId, []);
+                tasksByMilestone.get(taskMilestoneId).push(task);
+            });
+
+            tasksByMilestone.forEach((tasks, milestoneId) => {
+                const milestone = milestoneMap.get(milestoneId) || workGetMilestoneForObjective(obj, milestones);
+                if (!milestone || tasks.length === 0) return;
+                items.push({ obj, kr, ms: milestone, tasks });
+            });
         });
     });
     return items;
@@ -5717,18 +6688,25 @@ function workBuildBacklogItemsForMilestoneFilter(objectives, milestones, selecte
 
 // ── Filtro de marco ───────────────────────────────────────────
 function workSetMilestoneFilter(msId) {
-    workSelectedMilestone = (workSelectedMilestone === msId) ? null : msId;
+    if (workspaceScopeMilestones.has(msId)) workspaceScopeMilestones.delete(msId);
+    else workspaceScopeMilestones.add(msId);
+    workSelectedMilestone = workspaceScopeMilestones.size === 1 ? [...workspaceScopeMilestones][0] : null;
     backlogSaveFilters();
+    populateWorkspaceScopeControls();
     workUpdateMilestoneFilterUI();
-    workRenderBacklog();
+    populateTimeline();
+    populateScheduleDetail();
+    workRefreshCurrentView();
 }
 
 function workUpdateMilestoneFilterUI() {
     document.querySelectorAll('.work-ms-chip').forEach(chip => {
-        chip.classList.toggle('active', chip.dataset.msId === workSelectedMilestone);
+        chip.classList.toggle('active', workspaceScopeMilestones.has(chip.dataset.msId));
     });
     const milestones = workSortMilestonesForFilter(analysisResult?.milestones || []);
-    const selected = milestones.find(ms => ms.id === workSelectedMilestone);
+    const selected = workspaceScopeMilestones.size === 1
+        ? milestones.find(ms => ms.id === [...workspaceScopeMilestones][0])
+        : null;
     const selectedPill = document.getElementById('workMilestoneSelectedPill');
     if (selectedPill) {
         selectedPill.style.display = selected ? '' : 'none';
@@ -5900,28 +6878,16 @@ function workRenderBacklog() {
 
     container.innerHTML = '';
 
-    // Toggle de agrupamento
-    const toggleBar = document.createElement('div');
-    toggleBar.className = 'backlog-group-toggle';
-    toggleBar.innerHTML = `
-        <button data-mode="sprint" class="${backlogGroupMode === 'sprint' ? 'active' : ''}" onclick="workSetGroupMode('sprint')">
-            <i class="fas fa-layer-group"></i> Por Sprint
-        </button>
-        <button data-mode="task" class="${backlogGroupMode === 'task' ? 'active' : ''}" onclick="workSetGroupMode('task')">
-            <i class="fas fa-tasks"></i> Por Tarefa
-        </button>
-    `;
-    container.appendChild(toggleBar);
-
     workRenderMilestoneFilters();
 
     const objList    = (scheduledResult || analysisResult).objectives || [];
     const milestones = (analysisResult.milestones || []).slice().sort((a,b) => a.month - b.month);
     const typeIcons  = { vertical_slice:'🔬', alpha:'⚡', beta:'🧪', gold:'🏆', release:'🚀', prototype:'🔬', demo:'🎬' };
-    const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
+    const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444', production:'#6366f1' };
 
     // Coleta sprints planas
-    const allItems = workBuildBacklogItemsForMilestoneFilter(objList, milestones, workSelectedRoles, workSelectedMilestone);
+    const selectedRoles = workspaceScopeAreas.size === 0 ? new Set(ALL_ROLES) : new Set(workspaceScopeAreas);
+    const allItems = workBuildBacklogItemsForMilestoneFilter(objList, milestones, selectedRoles, workspaceScopeMilestones);
 
     if (allItems.length === 0) {
         const empty = document.createElement('div');
@@ -5932,7 +6898,8 @@ function workRenderBacklog() {
     }
 
     function sprintPct({ obj, kr }) {
-        const tasks = kr.tasks || [];
+        const item = arguments[0] || {};
+        const tasks = item.tasks || kr.tasks || [];
         if (!tasks.length) return 0;
         const done = tasks.filter(t => {
             if (workTaskKanbanState({ key: workTaskKey(obj.id, kr.id, t.id), task: t }) === 'done') return true;
@@ -5945,7 +6912,7 @@ function workRenderBacklog() {
         const { obj, kr, ms } = item;
         const role  = obj.area;
         const color = areaColors[role] || '#6366f1';
-        const tasks = kr.tasks || [];
+        const tasks = item.tasks || kr.tasks || [];
         const doneCount = tasks.filter(t => {
             if (workTaskKanbanState({ key: workTaskKey(obj.id, kr.id, t.id), task: t }) === 'done') return true;
             try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; }
@@ -5955,7 +6922,7 @@ function workRenderBacklog() {
         const allSelected = tasks.length > 0 && selectedCount === tasks.length;
         const someSelected = selectedCount > 0 && !allSelected;
 
-        const sprintKey = `kr_${obj.id}_${kr.id}`;
+        const sprintKey = `kr_${obj.id}_${kr.id}_${ms.id}`;
         const isOpen = hasPersistedState ? openKeys.has(sprintKey) : idx === 0;
         const sprintGroup = document.createElement('div');
         sprintGroup.dataset.sprintKey = sprintKey;
@@ -5972,7 +6939,7 @@ function workRenderBacklog() {
             ${extraLabel ? `<span class="work-sprint-num-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${extraLabel}</span>` : ''}
             <span class="work-sprint-name" style="font-weight:500;font-size:.84rem">${kr.title}</span>
             <button class="work-board-toggle ${allSelected ? 'checked' : ''} ${someSelected ? 'mixed' : ''}"
-                    onclick="workToggleBoardKr(event,'${obj.id}','${kr.id}')"
+                    onclick="workToggleBoardKr(event,'${obj.id}','${kr.id}','${ms.id}')"
                     title="${allSelected ? 'Remover todas do board' : 'Adicionar todas ao board'}">
                 ${allSelected ? '− remover todas' : someSelected ? '+ adicionar resto' : '+ adicionar todas'}
             </button>
@@ -6028,163 +6995,39 @@ function workRenderBacklog() {
         return sprintGroup;
     }
 
-    if (backlogGroupMode === 'task') {
-        // ── Modo "Por Tarefa": agrupa por área/objetivo (comportamento original) ──
-        const sortedItems = allItems.slice().sort((a, b) => {
-            if (a.ms.month !== b.ms.month) return a.ms.month - b.ms.month;
-            return ALL_ROLES.indexOf(a.obj.area) - ALL_ROLES.indexOf(b.obj.area);
-        }).map(item => ({
-            ...item,
-            percentComplete: sprintPct(item),
-        }));
+    // ── Modo "Por Tarefa": agrupa por KR/área ordenado por milestone ──
+    const sortedItems = allItems.slice().sort((a, b) => {
+        if (a.ms.month !== b.ms.month) return a.ms.month - b.ms.month;
+        return ALL_ROLES.indexOf(a.obj.area) - ALL_ROLES.indexOf(b.obj.area);
+    }).map(item => ({
+        ...item,
+        percentComplete: sprintPct(item),
+    }));
 
-        const partitionedItems = WorkBacklogHelpers.partitionBacklogItems(sortedItems);
+    const partitionedItems = WorkBacklogHelpers.partitionBacklogItems(sortedItems);
 
-        partitionedItems.active.forEach((item, idx) => {
+    partitionedItems.active.forEach((item, idx) => {
+        const label = item.kr.sprintNumber ? `Sprint ${item.kr.sprintNumber}` : null;
+        container.appendChild(renderKrGroup(item, idx, label));
+    });
+
+    if (partitionedItems.completed.length) {
+        const completedWrap = document.createElement('div');
+        completedWrap.className = 'backlog-completed-sprints';
+        completedWrap.innerHTML = `
+            <div class="backlog-completed-sprints-title">
+                <i class="fas fa-check-circle"></i>
+                <span>Sprints concluídas</span>
+                <span>${partitionedItems.completed.length}</span>
+            </div>
+        `;
+        partitionedItems.completed.forEach((item, idx) => {
             const label = item.kr.sprintNumber ? `Sprint ${item.kr.sprintNumber}` : null;
-            container.appendChild(renderKrGroup(item, idx, label));
+            const completedGroup = renderKrGroup(item, idx + 1, label);
+            completedGroup.classList.add('completed-archived', 'collapsed');
+            completedWrap.appendChild(completedGroup);
         });
-
-        if (partitionedItems.completed.length) {
-            const completedWrap = document.createElement('div');
-            completedWrap.className = 'backlog-completed-sprints';
-            completedWrap.innerHTML = `
-                <div class="backlog-completed-sprints-title">
-                    <i class="fas fa-check-circle"></i>
-                    <span>Sprints concluídas</span>
-                    <span>${partitionedItems.completed.length}</span>
-                </div>
-            `;
-            partitionedItems.completed.forEach((item, idx) => {
-                const label = item.kr.sprintNumber ? `Sprint ${item.kr.sprintNumber}` : null;
-                const completedGroup = renderKrGroup(item, idx + 1, label);
-                completedGroup.classList.add('completed-archived', 'collapsed');
-                completedWrap.appendChild(completedGroup);
-            });
-            container.appendChild(completedWrap);
-        }
-
-    } else {
-        // ── Modo "Por Sprint": agrupa KRs em blocos de sprint numerada ──
-        // Coleta todos os sprint numbers presentes nos items filtrados
-        const sprintGroups = {};
-        allItems.forEach(item => {
-            const sn = item.kr.sprintNumber || 0;
-            if (!sprintGroups[sn]) sprintGroups[sn] = [];
-            sprintGroups[sn].push(item);
-        });
-
-        const sortedSprints = Object.keys(sprintGroups)
-            .map(Number)
-            .sort((a, b) => a - b);
-
-        function getSprintGroupStats(items) {
-            let totalTasks = 0, totalDone = 0, totalSelected = 0;
-            items.forEach(({ obj, kr }) => {
-                (kr.tasks || []).forEach(t => {
-                    totalTasks++;
-                    const isDone = workTaskKanbanState({ key: workTaskKey(obj.id, kr.id, t.id), task: t }) === 'done' ||
-                        (() => { try { return localStorage.getItem(`task_${obj.id}_${kr.id}_${t.id}`) === 'true'; } catch { return false; } })();
-                    if (isDone) totalDone++;
-                    if (workIsBoardTaskSelected(obj.id, kr.id, t.id)) totalSelected++;
-                });
-            });
-
-            return {
-                totalTasks,
-                totalDone,
-                totalSelected,
-                percentComplete: totalTasks > 0 ? Math.round(totalDone / totalTasks * 100) : 0,
-            };
-        }
-
-        function renderSprintSection(section, groupIdx, completed = false) {
-            const { sprintNumber: sn, items, stats } = section;
-            const sprintKey = `sprint_${sn}`;
-            // Sem estado persistido: sprints ativas abertas por padrão (comportamento original)
-            const isOpen = hasPersistedState ? openKeys.has(sprintKey) : !completed;
-            const groupEl = document.createElement('div');
-            groupEl.dataset.sprintKey = sprintKey;
-            groupEl.className = `backlog-sprint-section${completed ? ' completed collapsed' : isOpen ? '' : ' collapsed'}`;
-
-            const { totalTasks, totalDone, totalSelected, percentComplete: groupPct } = stats;
-            const groupAllSelected = totalTasks > 0 && totalSelected === totalTasks;
-            const groupSomeSelected = totalSelected > 0 && !groupAllSelected;
-
-            // Quais áreas estão nessa sprint
-            const areasInSprint = [...new Set(items.map(i => i.obj.area))];
-            const areaTagsHtml = areasInSprint.map(a =>
-                `<span class="backlog-sprint-area-pill" style="background:${areaColors[a]||'#999'}18;color:${areaColors[a]||'#666'};border-color:${areaColors[a]||'#999'}44" title="${ROLE_LABELS[a]||a}">
-                    <span class="backlog-sprint-area-dot" style="background:${areaColors[a]||'#999'}"></span>
-                    ${ROLE_LABELS[a]||a}
-                </span>`
-            ).join('');
-
-            const sprintLabel = workGetSprintGroupLabel(sn);
-            groupEl.innerHTML = `
-                <div class="backlog-sprint-section-header" onclick="this.parentElement.classList.toggle('collapsed')">
-                    <button class="work-board-toggle ${groupAllSelected ? 'checked' : ''} ${groupSomeSelected ? 'mixed' : ''}"
-                            onclick="workToggleBoardSprint(event)"
-                            title="${groupAllSelected ? 'Remover sprint do board' : 'Adicionar sprint ao board'}">
-                        ${groupAllSelected ? '−todas' : groupSomeSelected ? '+resto' : '+todas'}
-                    </button>
-                    <i class="fas fa-chevron-down backlog-sprint-chevron"></i>
-                    <span class="backlog-sprint-section-title">${sprintLabel}</span>
-                    <span class="backlog-sprint-section-areas">
-                        <span class="backlog-sprint-area-label">Áreas</span>
-                        ${areaTagsHtml}
-                    </span>
-                    <span class="backlog-sprint-section-stats">${totalSelected} no board · ${totalDone}/${totalTasks} tarefas${groupPct === 100 ? ' ✓' : ''}</span>
-                    ${groupPct > 0 ? `<div class="backlog-sprint-section-prog"><div style="width:${groupPct}%;height:100%;border-radius:2px;transition:width .3s"></div></div>` : ''}
-                </div>
-            `;
-
-            // Sorteia KRs incompletos primeiro, depois por área
-            items.sort((a, b) => {
-                const pa = sprintPct(a), pb = sprintPct(b);
-                if ((pa === 100) !== (pb === 100)) return pa === 100 ? 1 : -1;
-                return ALL_ROLES.indexOf(a.obj.area) - ALL_ROLES.indexOf(b.obj.area);
-            });
-
-            items.forEach((item, idx) => {
-                groupEl.appendChild(renderKrGroup(item, idx, null));
-            });
-
-            return groupEl;
-        }
-
-        const sprintSections = sortedSprints.map(sn => {
-            const items = sprintGroups[sn];
-            const stats = getSprintGroupStats(items);
-            return {
-                sprintNumber: sn,
-                items,
-                stats,
-                percentComplete: stats.percentComplete,
-            };
-        });
-
-        const partitionedSections = WorkBacklogHelpers.partitionSprintSections(sprintSections);
-
-        partitionedSections.active.forEach((section, groupIdx) => {
-            container.appendChild(renderSprintSection(section, groupIdx));
-        });
-
-        if (partitionedSections.completed.length) {
-            const completedWrap = document.createElement('div');
-            completedWrap.className = 'backlog-completed-sprints';
-            completedWrap.innerHTML = `
-                <div class="backlog-completed-sprints-title">
-                    <i class="fas fa-check-circle"></i>
-                    <span>Sprints concluídas</span>
-                    <span>${partitionedSections.completed.length}</span>
-                </div>
-            `;
-            partitionedSections.completed.forEach((section, groupIdx) => {
-                completedWrap.appendChild(renderSprintSection(section, groupIdx, true));
-            });
-            container.appendChild(completedWrap);
-        }
+        container.appendChild(completedWrap);
     }
 }
 

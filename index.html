@@ -244,6 +244,19 @@
                             </button>
                         </div>
 
+                        <div class="workspace-scope-bar" id="workspaceScopeBar">
+                            <div class="workspace-scope-group">
+                                <div class="workspace-scope-chips" id="workspaceAreaChips"></div>
+                            </div>
+                            <div class="workspace-scope-group">
+                                <div class="workspace-scope-chips" id="workspaceMilestoneChips"></div>
+                            </div>
+                            <button class="workspace-scope-reset" type="button" onclick="resetWorkspaceScope()" title="Limpar filtros">
+                                <i class="fas fa-times"></i>
+                            </button>
+                            <span class="workspace-scope-summary" id="workspaceScopeSummary"></span>
+                        </div>
+
                         <section class="workspace-panel active" id="workspaceTimelinePanel" data-workspace-panel="timeline">
                             <div class="roadmap-card" id="roadmapCard">
                                 <div class="roadmap-card-header">
@@ -253,11 +266,14 @@
                                     </div>
                                     <div class="roadmap-card-controls">
                                         <div class="timeline-toggle-group" id="timelineToggleGroup">
-                                            <button class="timeline-toggle-btn" id="btnSimple" onclick="setTimelineMode('simple')">
-                                                <i class="fas fa-bars"></i> Simples
+                                            <button class="timeline-toggle-btn active" data-timeline-mode="detailed" onclick="setTimelineMode('detailed')">
+                                                <i class="fas fa-layer-group"></i> Objetivos
                                             </button>
-                                            <button class="timeline-toggle-btn active" id="btnDetailed" onclick="setTimelineMode('detailed')">
-                                                <i class="fas fa-layer-group"></i> Detalhado
+                                            <button class="timeline-toggle-btn" data-timeline-mode="simple" onclick="setTimelineMode('simple')">
+                                                <i class="fas fa-bars"></i> Áreas
+                                            </button>
+                                            <button class="timeline-toggle-btn" data-timeline-mode="phase" onclick="setTimelineMode('phase')">
+                                                <i class="fas fa-flag-checkered"></i> Fases
                                             </button>
                                         </div>
                                     </div>
@@ -265,6 +281,27 @@
                                 <div class="roadmap-card-body">
                                     <div class="timeline" id="timeline">
                                         <!-- Timeline será preenchida dinamicamente -->
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Lista de tarefas detalhada abaixo do gantt -->
+                            <div class="roadmap-card" id="taskDetailCard" style="margin-top:1rem">
+                                <div class="roadmap-card-header">
+                                    <div class="roadmap-card-title">
+                                        <i class="fas fa-list-check"></i>
+                                        <span>Tarefas por área</span>
+                                    </div>
+                                    <div class="roadmap-card-controls">
+                                        <div class="schedule-area-filter" id="scheduleAreaFilter">
+                                            <!-- chips de área preenchidos dinamicamente -->
+                                        </div>
+                                        <!-- FLAG futuro: botão ordenar por área -->
+                                    </div>
+                                </div>
+                                <div class="roadmap-card-body">
+                                    <div id="scheduleDetailList">
+                                        <!-- Lista de tarefas por fase preenchida dinamicamente -->
                                     </div>
                                 </div>
                             </div>
@@ -292,8 +329,8 @@
                     </div>
                 </div>
 
-                <!-- Linha 2: avatares de cargo + filtros de marco -->
-                <div class="work-roles-bar">
+                <!-- Filtros legados mantidos ocultos: o recorte agora fica no header global -->
+                <div class="work-roles-bar" style="display:none">
                     <div class="work-role-avatars" id="workRoleAvatars">
                         <button class="work-avatar active" data-role="programming" title="Programador" onclick="workToggleRole('programming')">
                             <span class="avatar-circle avatar-prog">💻</span>
@@ -383,6 +420,9 @@
                         <button class="workspace-rail-btn" data-workspace-drawer="milestones" onclick="openWorkspaceDrawer('milestones')" title="Marcos" type="button">
                             <i class="fas fa-flag-checkered"></i>
                         </button>
+                        <button class="workspace-rail-btn" data-workspace-drawer="costs" onclick="openWorkspaceDrawer('costs')" title="Custos" type="button">
+                            <i class="fas fa-coins"></i>
+                        </button>
                         <button class="workspace-rail-btn" data-workspace-drawer="team" onclick="openWorkspaceDrawer('team')" title="Equipe" type="button">
                             <i class="fas fa-users"></i>
                         </button>
@@ -421,6 +461,18 @@
                                 </div>
                                 <div class="milestones-grid" id="milestonesGrid">
                                     <!-- Milestones serão preenchidos dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="workspace-drawer-panel" data-drawer-panel="costs" hidden>
+                            <div class="costs-container" id="costsContainer">
+                                <div class="drawer-section-title">
+                                    <i class="fas fa-coins"></i>
+                                    <span>Custos por fase</span>
+                                </div>
+                                <div class="costs-content" id="costsContent">
+                                    <!-- Custos serão preenchidos dinamicamente -->
                                 </div>
                             </div>
                         </div>

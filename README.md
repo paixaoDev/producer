@@ -62,10 +62,10 @@ Clique em **Analisar GDD**. A IA passa por 5 fases de processamento, mostradas n
 | Fase | O que acontece |
 |------|----------------|
 | Normalizando GDD | A IA lê o documento e preenche um template estruturado com todas as informações do jogo |
-| Sub-áreas | A IA define de 20 a 35 sub-áreas de desenvolvimento específicas para o seu projeto |
-| KRs | Para cada sub-área, a IA gera de 6 a 12 Key Results verificáveis |
-| Sprints | Para cada KR, a IA gera tarefas de sprint com estimativa em dias |
-| Milestones | A IA define de 5 a 8 marcos do projeto com critérios de aceite |
+| Sub-áreas | A IA define de 12 a 22 sub-áreas de desenvolvimento específicas para o seu projeto |
+| KRs | Para cada sub-área, a IA gera de 3 a 6 Key Results verificáveis |
+| Sprints | Para cada KR, a IA gera de 3 a 7 tarefas pequenas de sprint com estimativa em dias |
+| Milestones | A IA define 7 marcos do projeto com critérios de aceite |
 
 Durante o processamento, um painel ao vivo mostra o que a IA está gerando em tempo real.
 
@@ -175,7 +175,7 @@ O projeto não tem dependências npm, build step ou backend. É vanilla HTML + C
 ```
 GDD (arquivo) 
   → [Fase 0] normalizarGDD()     → objeto GDD_TEMPLATE preenchido
-  → [Fase 1] mdPhase1_Subareas() → Markdown com 20-35 sub-áreas
+  → [Fase 1] mdPhase1_Subareas() → Markdown com 12-22 sub-áreas
   → [Fase 2] mdPhase2_KRs()      → Markdown com KRs por sub-área
   → [Fase 3] mdPhase3_Sprints()  → Markdown com tarefas por KR
   → [Fase 4] mdPhase4_Milestones() → Markdown com marcos
@@ -238,7 +238,7 @@ Isso permite simular equipes de 1 a 5 pessoas por área e ver o impacto imediato
 
 ### Sistema de Pontos de Sprint
 
-Cada sprint tem capacidade de **10 pontos** (10 dias úteis = 2 semanas). Cada tarefa vale pontos = `estimatedDays` (1, 2 ou 3). A função `assignSprintPoints()` calcula:
+Cada sprint tem capacidade de **10 pontos** (10 dias úteis = 2 semanas). Cada tarefa vale pontos = `estimatedDays` (1 ou 2). A função `assignSprintPoints()` calcula:
 
 - `kr.sprintCount = ceil(totalPoints / 10)`
 - `kr.estimatedWeeks = sprintCount * 2`
