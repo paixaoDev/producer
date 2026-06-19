@@ -17,3 +17,6 @@ node_modules/
 
 # Logs
 *.log
+
+# Roadmaps salvos localmente
+roadmap_*.json
