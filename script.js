@@ -1534,7 +1534,7 @@ function appendGenerationLog(label, icon, content) {
             <i class="fas fa-chevron-down log-item-toggle"></i>
         </div>
         <div class="log-item-body" id="${id}">
-            <pre class="log-item-content">${escapeHtml(content.substring(0, 3000))}${content.length > 3000 ? '\n\n[... truncado para exibição ...]' : ''}</pre>
+            <pre class="log-item-content">${escapeHtml(content)}</pre>
         </div>
     `;
     log.appendChild(item);
@@ -1577,10 +1577,10 @@ function showResumeScreen(errorMsg, progress) {
     const progressEl = document.getElementById('resumeProgress');
     const phases = [
         { key: 'gddNormalizado', label: 'GDD Normalizado', icon: 'fas fa-magic' },
-        { key: 'phase1md',       label: 'Sub-áreas mapeadas', icon: 'fas fa-file-search' },
-        { key: 'phase2mds',      label: 'KRs detalhados', icon: 'fas fa-key' },
-        { key: 'phase3mds',      label: 'Sprints criados', icon: 'fas fa-tasks' },
-        { key: 'phase4md',       label: 'Milestones definidos', icon: 'fas fa-flag-checkered' },
+        { key: 'phase1md',       label: 'Milestones definidos', icon: 'fas fa-flag-checkered' },
+        { key: 'phase2mds',      label: 'Features por fase', icon: 'fas fa-file-search' },
+        { key: 'phase3mds',      label: 'Tasks de sprint', icon: 'fas fa-tasks' },
+        { key: 'phase4md',       label: 'Cronograma calculado', icon: 'fas fa-calendar-alt' },
     ];
 
     progressEl.innerHTML = phases.map(p => {
@@ -1651,53 +1651,57 @@ async function analyzeDocument() {
         );
         const genreCtx = getGenreContext(detectedGenre);
 
-        setLoadingPhase(1, 'Mapeando sub-áreas de desenvolvimento...');
+        setLoadingPhase(1, 'Definindo milestones e entregáveis por fase...');
 
-        // FASE 1: Lê o GDD normalizado completo → sub-áreas
-        const phase1md = await mdPhase1_Subareas(gddCompleto(gddNormalizado), genreCtx, apiKey);
+        // NOVO FLUXO: Fase 1 → Milestones com entregáveis (sem tempo nas áreas)
+        const phase1md = await mdPhase1_Milestones(gddCompleto(gddNormalizado), genreCtx, apiKey);
 
-        // Salva progresso + log ao vivo
         store.setProgress({ gddNormalizado, phase1md });
-        appendGenerationLog('Sub-áreas de Desenvolvimento', 'fas fa-file-search', phase1md);
+        appendGenerationLog('Milestones e Entregáveis', 'fas fa-flag-checkered', phase1md);
 
-        // Extrai lista de sub-áreas do MD
-        const subareaList = extractSubareasFromMD(phase1md);
-        const totalSubs = subareaList.length;
-        setLoadingPhase(2, `Detalhando KRs para ${totalSubs} sub-áreas...`);
+        // Extrai lista de milestones do MD
+        const milestoneList = extractMilestonesFromMD(phase1md);
+        setLoadingPhase(2, `Mapeando features para ${milestoneList.length} marcos...`);
 
-        // FASE 2: Para cada sub-área, usa apenas as seções relevantes do GDD
-        const phase2mds = await mdPhase2_KRs(subareaList, genreCtx, gddNormalizado, apiKey, (done, total) => {
-            setLoadingMessage(`KRs: ${done}/${total} sub-áreas...`);
-        });
+        // NOVO FLUXO: Fase 2 → Features por milestone (área como label, sem período)
+        const phase2mds = await mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey,
+            (done, total) => {
+                setLoadingMessage(`Features: ${done}/${total} marcos...`);
+            },
+            (ms, mdContent) => {
+                appendGenerationLog(`Features — ${ms.title}`, 'fas fa-file-search', mdContent);
+            }
+        );
 
-        // Salva progresso + log ao vivo
         store.setProgress({ gddNormalizado, phase1md, phase2mds });
-        appendGenerationLog('Key Results (KRs)', 'fas fa-key', Object.values(phase2mds).join('\n\n---\n\n'));
 
-        setLoadingPhase(3, 'Criando tarefas de sprint (sprints de 2 semanas)...');
+        // Extrai lista plana de features com milestone de origem
+        const featureList = extractFeaturesFromMDs(phase2mds, milestoneList);
+        setLoadingPhase(3, `Criando tasks de sprint para ${featureList.length} features...`);
 
-        // FASE 3: Sprints com seções relevantes do GDD por área
-        const phase3mds = await mdPhase3_Sprints(subareaList, phase2mds, genreCtx, gddNormalizado, apiKey, (done, total) => {
-            setLoadingMessage(`Sprints: ${done}/${total} sub-áreas...`);
-        });
+        // NOVO FLUXO: Fase 3 → Tasks de sprint por feature (1-2 dias cada)
+        const phase3mds = await mdPhase3_Tasks(featureList, genreCtx, gddNormalizado, apiKey,
+            (done, total) => {
+                setLoadingMessage(`Tasks: ${done}/${total} features...`);
+            },
+            (ft, mdContent) => {
+                appendGenerationLog(`Tasks — [${ft.area}] ${ft.title}`, 'fas fa-tasks', mdContent);
+            }
+        );
 
-        // Salva progresso + log ao vivo
         store.setProgress({ gddNormalizado, phase1md, phase2mds, phase3mds });
-        appendGenerationLog('Tarefas de Sprint', 'fas fa-tasks', Object.values(phase3mds).join('\n\n---\n\n'));
 
-        setLoadingPhase(4, 'Definindo milestones...');
+        setLoadingPhase(4, 'Consolidando cronograma...');
 
-        // FASE 4: Milestones
-        const phase4md = await mdPhase4_Milestones(phase1md, subareaList, genreCtx, gddNormalizado, apiKey);
+        // Fase 4 vira uma síntese de visão geral (não precisa de chamada extra de milestones)
+        const phase4md = phase1md; // milestones já foram definidos na Fase 1
 
-        // Salva progresso completo + log ao vivo
         store.setProgress({ gddNormalizado, phase1md, phase2mds, phase3mds, phase4md });
-        appendGenerationLog('Milestones', 'fas fa-flag-checkered', phase4md);
 
         setLoadingPhase(5, 'Consolidando em roadmap final...');
 
-        // FASE FINAL: MD → JSON
-        const consolidatedMD = buildConsolidatedMD(phase1md, subareaList, phase3mds, phase4md);
+        // FASE FINAL: MD → JSON (adaptado ao novo formato)
+        const consolidatedMD = buildConsolidatedMD_v2(phase1md, milestoneList, featureList, phase3mds);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
         resetWorkspaceScopeState();
 
@@ -1746,48 +1750,49 @@ async function resumeAnalysis() {
         // Reconstrói phase1md — ou usa o salvo
         let phase1md = progress.phase1md;
         if (!phase1md) {
-            setLoadingPhase(1, 'Mapeando sub-áreas de desenvolvimento...');
-            phase1md = await mdPhase1_Subareas(gddCompleto(gddNormalizado), genreCtx, apiKey);
+            setLoadingPhase(1, 'Definindo milestones e entregáveis por fase...');
+            phase1md = await mdPhase1_Milestones(gddCompleto(gddNormalizado), genreCtx, apiKey);
             store.setProgress({ ...store.getProgress(), phase1md });
         }
-        appendGenerationLog('Sub-áreas de Desenvolvimento', 'fas fa-file-search', phase1md);
+        appendGenerationLog('Milestones e Entregáveis', 'fas fa-flag-checkered', phase1md);
 
-        const subareaList = extractSubareasFromMD(phase1md);
-        const totalSubs = subareaList.length;
+        const milestoneList = extractMilestonesFromMD(phase1md);
 
         // Reconstrói phase2mds — ou usa o salvo
         let phase2mds = progress.phase2mds;
         if (!phase2mds) {
-            setLoadingPhase(2, `Detalhando KRs para ${totalSubs} sub-áreas...`);
-            phase2mds = await mdPhase2_KRs(subareaList, genreCtx, gddNormalizado, apiKey, (done, total) => {
-                setLoadingMessage(`KRs: ${done}/${total} sub-áreas...`);
-            });
+            setLoadingPhase(2, `Mapeando features para ${milestoneList.length} marcos...`);
+            phase2mds = await mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey,
+                (done, total) => { setLoadingMessage(`Features: ${done}/${total} marcos...`); },
+                (ms, mdContent) => { appendGenerationLog(`Features — ${ms.title}`, 'fas fa-file-search', mdContent); }
+            );
             store.setProgress({ ...store.getProgress(), phase2mds });
+        } else {
+            // Retomando — exibe logs do cache
+            for (const ms of milestoneList) {
+                if (phase2mds[ms.id]) appendGenerationLog(`Features — ${ms.title}`, 'fas fa-file-search', phase2mds[ms.id]);
+            }
         }
-        appendGenerationLog('Key Results (KRs)', 'fas fa-key', Object.values(phase2mds).join('\n\n---\n\n'));
 
         // Reconstrói phase3mds — ou usa o salvo
+        const featureList = extractFeaturesFromMDs(phase2mds, milestoneList);
         let phase3mds = progress.phase3mds;
         if (!phase3mds) {
-            setLoadingPhase(3, 'Criando tarefas de sprint...');
-            phase3mds = await mdPhase3_Sprints(subareaList, phase2mds, genreCtx, gddNormalizado, apiKey, (done, total) => {
-                setLoadingMessage(`Sprints: ${done}/${total} sub-áreas...`);
-            });
+            setLoadingPhase(3, `Criando tasks para ${featureList.length} features...`);
+            phase3mds = await mdPhase3_Tasks(featureList, genreCtx, gddNormalizado, apiKey,
+                (done, total) => { setLoadingMessage(`Tasks: ${done}/${total} features...`); },
+                (ft, mdContent) => { appendGenerationLog(`Tasks — [${ft.area}] ${ft.title}`, 'fas fa-tasks', mdContent); }
+            );
             store.setProgress({ ...store.getProgress(), phase3mds });
+        } else {
+            // Retomando — exibe logs do cache
+            for (const ft of featureList) {
+                if (phase3mds[ft.id]) appendGenerationLog(`Tasks — [${ft.area}] ${ft.title}`, 'fas fa-tasks', phase3mds[ft.id]);
+            }
         }
-        appendGenerationLog('Tarefas de Sprint', 'fas fa-tasks', Object.values(phase3mds).join('\n\n---\n\n'));
-
-        // Reconstrói phase4md — ou usa o salvo
-        let phase4md = progress.phase4md;
-        if (!phase4md) {
-            setLoadingPhase(4, 'Definindo milestones...');
-            phase4md = await mdPhase4_Milestones(phase1md, subareaList, genreCtx, gddNormalizado, apiKey);
-            store.setProgress({ ...store.getProgress(), phase4md });
-        }
-        appendGenerationLog('Milestones', 'fas fa-flag-checkered', phase4md);
 
         setLoadingPhase(5, 'Consolidando em roadmap final...');
-        const consolidatedMD = buildConsolidatedMD(phase1md, subareaList, phase3mds, phase4md);
+        const consolidatedMD = buildConsolidatedMD_v2(phase1md, milestoneList, featureList, phase3mds);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
         resetWorkspaceScopeState();
 
@@ -2011,6 +2016,384 @@ function sanitizarGDD(obj) {
     return resultado;
 }
 
+// ============================================================
+// NOVO FLUXO v2: GDD → Milestones → Features → Tasks → Cronograma
+// Regra: tempo NUNCA é atribuído pela IA às áreas diretamente.
+// O cronograma é DERIVADO da quantidade real de tasks geradas.
+// ============================================================
+
+// FASE 1 (v2): GDD → Milestones com entregáveis por fase
+// Sem período por área. A IA só define O QUE entra em cada fase.
+async function mdPhase1_Milestones(gddText, genreCtx, apiKey) {
+    const prompt = `Você é um produtor de jogos sênior. Analise o GDD abaixo e defina os 8 marcos (milestones) do projeto com seus entregáveis e critérios de aceite.
+
+Gênero: ${genreCtx.label}
+
+${roadmapPhaseContractText()}
+
+REGRA CRÍTICA: NÃO defina períodos ou meses para as áreas. Apenas descreva O QUE deve existir em cada marco. O cronograma será calculado automaticamente a partir das tasks criadas nas fases seguintes.
+
+PASSO 1 — IDENTIFIQUE A MECÂNICA PRIORITÁRIA E O LOOP MÍNIMO DA POC:
+Antes de definir os marcos, identifique o diferencial real do jogo (não o gênero). Pense:
+- O que o jogador FAZ no jogo? (verbo principal)
+- O que REAGE a isso? (enemy, world, physics)
+- Qual é o LOOP MÍNIMO JOGÁVEL? (ex: boss rush = atirar → acertar boss → boss atira de volta → jogador morre ou vence)
+A PoC deve conter esse loop mínimo completo — sem arte, sem som, mas JOGÁVEL de ponta a ponta.
+Exemplos por gênero:
+- Boss rush: player ataca → boss recebe dano → boss atira → player pode morrer → resultado (vitória/derrota)
+- Plataformer: player pula → colisão com plataforma → obstáculo mata → fase termina
+- Puzzle: peças se movem → condição de vitória detectada → próximo nível
+NUNCA crie uma PoC que só testa a mecânica de input isolada (ex: só o arpão sem o boss). A PoC valida o LOOP COMPLETO.
+
+GDD DO PROJETO:
+${gddText}
+
+Retorne APENAS o Markdown abaixo, sem texto antes ou depois:
+
+# VISÃO GERAL
+- Título: [nome do jogo]
+- Gênero: [gênero]
+- Plataforma: [plataformas]
+- Equipe: [estimativa]
+- Engine: [engine]
+- Mecânica Prioritária: [o que o jogador faz, com qual input, qual efeito — não use o nome do gênero]
+- Risco Técnico Principal: [o maior risco que a PoC deve validar]
+
+# MILESTONES
+
+## Marco 1: PoC — [nome específico do jogo]
+- Tipo: poc
+- Prova de Conceito: [descreva em 1-2 frases o que o jogador consegue FAZER nessa PoC — o loop mínimo jogável de ponta a ponta]
+- O que deve existir: [liste apenas o que é necessário para o loop mínimo funcionar — tudo cru, sem arte, sem som, 7 dias]
+- O que NÃO deve existir: [arte final, som, menus, save/load, conteúdo além do mínimo]
+- Critérios de aceite: [como saber que está pronto — foco no loop funcionando]
+- Áreas envolvidas: programming | design
+
+## Marco 2: Prototipo — [nome específico]
+- Tipo: prototype
+- O que deve existir: [liste apenas o que sustenta o loop de diversão — sem infraestrutura, sem conteúdo completo]
+- Critérios de aceite: [jogador joga e quer continuar]
+- Áreas envolvidas: programming | design | art
+
+## Marco 3: Demo — [nome específico]
+- Tipo: demo
+- O que deve existir: [caminho curto jogável, início-meio-fim, diferencial visível]
+- Critérios de aceite: [alguém quer jogar isso?]
+- Áreas envolvidas: programming | design | art | audio
+
+## Marco 4: Vertical Slice — [nome específico]
+- Tipo: vertical_slice
+- O que deve existir: [fatia polida com qualidade de lançamento + infraestrutura: save/load, troca de fases, menus]
+- Critérios de aceite: [consigo terminar esse jogo nesse nível de qualidade?]
+- Áreas envolvidas: programming | design | art | audio | qa
+
+## Marco 5: Alpha — [nome específico]
+- Tipo: alpha
+- O que deve existir: [todos os sistemas e conteúdo principal jogável, bugs ok]
+- Critérios de aceite: [jogo completo em termos de escopo]
+- Áreas envolvidas: programming | design | art | audio | qa
+
+## Marco 6: Beta — [nome específico]
+- Tipo: beta
+- O que deve existir: [conteúdo completo, balanceamento, QA externo, localização]
+- Critérios de aceite: [zero escopo novo, foco em qualidade]
+- Áreas envolvidas: programming | design | art | audio | qa | production
+
+## Marco 7: Gold — [nome específico]
+- Tipo: gold
+- O que deve existir: [candidato a lançamento, certificação, zero bugs críticos]
+- Critérios de aceite: [aprovado pela plataforma]
+- Áreas envolvidas: programming | qa | production
+
+## Marco 8: Lançamento — [nome específico]
+- Tipo: release
+- O que deve existir: [publicação, comunicação, monitoramento, hotfixes]
+- Critérios de aceite: [jogo publicado e estável]
+- Áreas envolvidas: programming | production`;
+
+    return await callAIAPI(prompt, apiKey);
+}
+
+// Extrai lista de milestones do MD da Fase 1 (v2)
+function extractMilestonesFromMD(md) {
+    const milestones = [];
+    // Parse visão geral
+    const overviewMatch = md.match(/# VISÃO GERAL\n([\s\S]*?)(?=\n# MILESTONES)/);
+    const overview = {};
+    if (overviewMatch) {
+        for (const line of overviewMatch[1].split('\n').filter(l => l.trim())) {
+            const m = line.match(/^-\s+(.+?):\s+(.+)$/);
+            if (!m) continue;
+            const key = m[1].trim().toLowerCase();
+            const val = m[2].trim();
+            if (key === 'título' || key === 'titulo') overview.title = val;
+            else if (key === 'gênero' || key === 'genero') overview.genre = val;
+            else if (key === 'plataforma') overview.platform = val;
+            else if (key === 'equipe') overview.teamSize = val;
+            else if (key === 'engine') overview.engine = val;
+            else if (key === 'mecânica prioritária' || key === 'mecanica prioritaria') overview.coreMechanic = val;
+            else if (key === 'risco técnico principal' || key === 'risco tecnico principal') overview.mainRisk = val;
+        }
+    }
+
+    // Parse milestones
+    const blocks = md.split(/\n## Marco \d+:/);
+    for (const block of blocks.slice(1)) {
+        const lines = block.split('\n').filter(l => l.trim());
+        if (!lines.length) continue;
+
+        const title = lines[0].trim();
+        const ms = { title, type: '', whatExists: [], criteria: [], areas: [], overview };
+
+        for (const line of lines.slice(1)) {
+            const m = line.match(/^-\s+(.+?):\s+(.+)$/);
+            if (!m) continue;
+            const key = m[1].trim().toLowerCase();
+            const val = m[2].trim();
+            if (key === 'tipo') ms.type = val.toLowerCase();
+            else if (key === 'o que deve existir') ms.whatExists = val.split('|').map(s => s.trim()).filter(Boolean);
+            else if (key === 'critérios de aceite' || key === 'criterios de aceite') ms.criteria = val.split('|').map(s => s.trim()).filter(Boolean);
+            else if (key === 'áreas envolvidas' || key === 'areas envolvidas') ms.areas = val.split('|').map(s => s.trim().toLowerCase()).filter(Boolean);
+        }
+
+        if (!ms.type) ms.type = 'poc';
+        ms.id = `ms_${ms.type}`;
+        milestones.push(ms);
+    }
+
+    return milestones;
+}
+
+// FASE 2 (v2): Para cada milestone → features organizadas por área (sem período)
+async function mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey, onProgress, onLog) {
+    const results = {};
+
+    for (let i = 0; i < milestoneList.length; i++) {
+        const ms = milestoneList[i];
+        const gddCtx = gddCompleto(gddNormalizado);
+
+        const prompt = `Você é um produtor de jogos sênior especialista em ${genreCtx.label}.
+
+Projeto: ${gddNormalizado.titulo || 'jogo'} | Engine: ${gddNormalizado.engine || 'agnóstico'}
+
+${roadmapPhaseContractText()}
+
+GDD DO PROJETO:
+${gddCtx.substring(0, 3000)}
+
+MARCO: ${ms.title}
+Tipo: ${ms.type}
+O que deve existir neste marco: ${ms.whatExists.join(' | ')}
+Áreas envolvidas: ${ms.areas.join(', ')}
+
+Liste as features concretas que precisam ser desenvolvidas para que este marco seja atingido.
+
+REGRAS GERAIS:
+- Use nomes reais do GDD (personagens, mecânicas, ambientes)
+- Área é apenas um label (programming, art, design, audio, qa, production) — NÃO define tempo
+- Cada feature é um objetivo verificável, independente
+- Respeite estritamente o escopo do marco (não coloque no poc o que é do alpha)
+- Quantidade de features por marco (siga esses limites):
+  poc: 4-6 features (loop mínimo, tudo cru)
+  prototype: 6-10 features (loop completo jogável, primeiro boss real, arte placeholder, HUD)
+  demo: 5-8 features (sequência narrativa, polimento suficiente)
+  vertical_slice: 6-10 features (infraestrutura: save/load, menus, qualidade de lançamento)
+  alpha: 8-12 features (todos os sistemas, todo o conteúdo principal)
+  beta: 5-8 features (balanceamento, QA, localização)
+  gold: 4-6 features (certificação, build master)
+  release: 4-6 features (publicação, monitoramento)
+- NUNCA repita features que são do marco anterior — cada marco adiciona algo novo
+- Pense nos SISTEMAS que precisam existir para suportar o conteúdo (ex: state machine de boss antes de criar ataques específicos)
+
+REGRAS ESPECÍFICAS POR TIPO:
+${ms.type === 'poc' ? `POC (7 dias):
+- OBRIGATÓRIO: inclua o LOOP DE COMBATE MÍNIMO — player ataca → enemy reage → enemy ataca → player pode morrer/vencer
+- NUNCA inclua: arte final, cenário, som, UI polida, save/load, menus
+- Foco: mecânica core funcionando de ponta a ponta, tudo cru (primitivos, sem textura)
+- O jogador deve conseguir jogar uma "partida" mesmo que feia` : ''}
+${ms.type === 'prototype' ? `PROTÓTIPO (loop completo jogável):
+- OBRIGATÓRIO de arte: cenário/ambiente jogável (mesmo que simples), arte placeholder dos personagens principais
+- Não repita features da PoC — assuma que tudo da PoC já existe
+- Adicione: primeiro boss real com comportamentos, cenário jogável, HUD básico, game loop (morte/reinício)
+- Arte de cenário é OBRIGATÓRIA no protótipo — sem cenário o jogo não tem contexto` : ''}
+${ms.type === 'demo' ? `DEMO (sequência narrativa curta):
+- Assuma que o loop de combate e protótipo já existem
+- Adicione: sequência de início-meio-fim, narrativa básica, polimento visual suficiente para evento` : ''}
+${(ms.type === 'alpha' || ms.type === 'vertical_slice') ? `${ms.type.toUpperCase()}:
+- Assuma que tudo das fases anteriores existe
+- Expanda conteúdo: todos os bosses, todas as fases, todos os sistemas` : ''}
+
+Retorne APENAS o Markdown:
+
+## ${ms.title}
+### [area: programming] Feature 1: [nome concreto]
+- Descrição: [o que é, o que entrega, como verificar]
+
+### [area: art] Feature 2: [nome concreto]
+- Descrição: [o que é, o que entrega, como verificar]`;
+
+        try {
+            results[ms.id] = await callAIAPI(prompt, apiKey);
+        } catch (e) {
+            console.warn(`Erro features ${ms.title}:`, e);
+            results[ms.id] = `## ${ms.title}\n### [area: programming] Feature: [erro]\n- Descrição: Erro ao gerar features para este marco.`;
+        }
+
+        if (onLog) onLog(ms, results[ms.id]);
+        if (onProgress) onProgress(i + 1, milestoneList.length);
+        if (i < milestoneList.length - 1) await sleep(1000);
+    }
+
+    return results;
+}
+
+// Extrai lista plana de features com referência ao milestone de origem
+function extractFeaturesFromMDs(phase2mds, milestoneList) {
+    const features = [];
+
+    for (const ms of milestoneList) {
+        const md = phase2mds[ms.id] || '';
+        const blocks = md.split(/\n### /);
+
+        for (const block of blocks.slice(1)) {
+            const lines = block.split('\n').filter(l => l.trim());
+            if (!lines.length) continue;
+
+            const header = lines[0];
+            const areaMatch = header.match(/\[area:\s*([^\]]+)\]/i);
+            const titleMatch = header
+                .replace(/\[area:[^\]]+\]\s*:?\s*/i, '')
+                .replace(/^Feature\s+\d+:\s*/i, '')
+                .replace(/^:\s*/, '')
+                .trim();
+            const descLine = lines.find(l => l.toLowerCase().startsWith('- descrição:') || l.toLowerCase().startsWith('- descricao:'));
+            const desc = descLine ? descLine.replace(/^-\s*descri[çc][aã]o:\s*/i, '').trim() : '';
+
+            features.push({
+                id: `ft_${ms.type}_${features.length}`,
+                title: titleMatch,
+                area: areaMatch ? areaMatch[1].trim().toLowerCase() : 'programming',
+                description: desc,
+                milestoneId: ms.id,
+                milestoneType: ms.type,
+                milestoneTitle: ms.title,
+            });
+        }
+    }
+
+    return features;
+}
+
+// FASE 3 (v2): Para cada feature → tasks de sprint (1-2 dias cada)
+async function mdPhase3_Tasks(featureList, genreCtx, gddNormalizado, apiKey, onProgress, onLog) {
+    const results = {};
+
+    for (let i = 0; i < featureList.length; i++) {
+        const ft = featureList[i];
+
+        // Pipeline hint da área
+        const areaPipeline = AREA_PIPELINES[ft.area];
+        let sprintExamples = '';
+        if (areaPipeline) {
+            const examples = areaPipeline.phases.flatMap(p => p.sprint_examples || []).slice(0, 5);
+            if (examples.length) sprintExamples = `Exemplos de tasks reais:\n${examples.map(e => `- ${e}`).join('\n')}`;
+        }
+
+        const gddCtx = gddSecoesPorArea(gddNormalizado, ft.area);
+        const prompt = `Você é um produtor de jogos sênior, área ${ft.area}, projeto ${gddNormalizado.titulo || 'jogo'}.
+
+${roadmapPhaseContractText()}
+
+GDD relevante para ${ft.area}:
+${gddCtx}
+
+${sprintExamples}
+
+FEATURE: ${ft.title}
+Marco: ${ft.milestoneTitle} (${ft.milestoneType})
+Descrição: ${ft.description}
+
+Crie as tasks de sprint que implementam essa feature. Cada task = 1 ou 2 dias de trabalho de 1 pessoa.
+
+FORMATO: título >> descrição técnica | Nd | prioridade | tipo
+
+Regras:
+- Verbos no título: Implementar, Modelar, Texturizar, Riger, Animar, Testar, Compor, Projetar, Revisar
+- Descrição: ferramenta, parâmetro, entregável concreto
+- Prioridade: critical | high | medium | low
+- Tipo: feature | art | design | audio | test | fix | config | doc
+- Quantidade de tasks por feature (calibrado por fase):
+  poc: 3-5 tasks (loop mínimo, sem arte)
+  prototype: 5-8 tasks (sistemas completos com arte placeholder)
+  demo: 5-8 tasks (polimento narrativo e visual)
+  vertical_slice: 6-10 tasks (infraestrutura + qualidade de lançamento)
+  alpha: 6-10 tasks (sistemas completos + todo conteúdo)
+  beta+: 4-7 tasks (ajustes, QA, submissão)
+- Duração: 1 ou 2 dias por task
+- Use nomes reais do GDD (personagens, mecânicas, ambientes)
+- Pense nas subtarefas reais: um sistema de state machine precisa de: design dos estados, implementação base, integração com animator, cada estado individual, testes
+
+Retorne APENAS o Markdown:
+
+## ${ft.title}
+- [ ] Título curto >> Descrição técnica do que fazer e como | 2d | high | feature
+- [ ] Outra task >> Entregável concreto com ferramenta | 1d | high | art`;
+
+        let tasksMD = null;
+        for (let attempt = 0; attempt < 3 && !tasksMD; attempt++) {
+            try {
+                if (attempt > 0) {
+                    const retryDelay = attempt * 8000;
+                    if (onProgress) onProgress(i + 1, featureList.length); // mantém UI viva
+                    await sleep(retryDelay);
+                }
+                tasksMD = await callAIAPI(prompt, apiKey);
+            } catch (e) {
+                console.warn(`Erro tasks ${ft.title} (tentativa ${attempt + 1}):`, e);
+                if (attempt === 2) {
+                    tasksMD = `## ${ft.title}\n- [ ] Implementar ${ft.title} >> Erro ao gerar — reprocessar manualmente. | 2d | high | feature`;
+                }
+            }
+        }
+        results[ft.id] = tasksMD;
+
+        if (onLog) onLog(ft, results[ft.id]);
+        if (onProgress) onProgress(i + 1, featureList.length);
+        // Pausa entre features: maior para evitar rate limit em projetos com muitas features
+        if (i < featureList.length - 1) await sleep(800);
+    }
+
+    return results;
+}
+
+// Consolida MD v2 (milestones → features → tasks)
+function buildConsolidatedMD_v2(phase1md, milestoneList, featureList, phase3mds) {
+    // Agrupa features por milestone para estruturar o MD
+    const byMilestone = {};
+    for (const ms of milestoneList) {
+        byMilestone[ms.id] = featureList.filter(ft => ft.milestoneId === ms.id);
+    }
+
+    const sections = milestoneList.map(ms => {
+        const features = byMilestone[ms.id] || [];
+        const taskSections = features.map(ft => {
+            const rawTasks = phase3mds[ft.id] || '(sem tasks)';
+            // Remove cabeçalho ## que a IA inclui no topo do MD de tasks — evita conflito com o parser
+            const tasksMD = rawTasks.replace(/^##[^\n]*\n/, '').trim();
+            // Formato: ### FEATURE [area:programming]: Nome — o "area:" é obrigatório para o parser
+            return `### FEATURE [area:${ft.area}]: ${ft.title}\n${tasksMD}`;
+        }).join('\n\n');
+        return `## MARCO: ${ms.title} (${ms.type})\n${taskSections}`;
+    }).join('\n\n');
+
+    return `${phase1md}\n\n# ROADMAP DETALHADO\n\n${sections}`;
+}
+
+// ============================================================
+// FLUXO LEGADO v1 (mantido para compatibilidade)
+// As funções abaixo são usadas pelo mdToJSON via parseMDSprints
+// ============================================================
+
 // FASE 1 (MD): Lê GDD → retorna Markdown com visão geral + lista de sub-áreas
 async function mdPhase1_Subareas(gddText, genreCtx, apiKey) {
     // Extrair duração do GDD para usar no prompt
@@ -2146,11 +2529,11 @@ function extractSubareasFromMD(md) {
 
 function roadmapPhaseContractText() {
     return `CONTRATO DAS FASES DO ROADMAP:
-- poc/prova de conceito: valida os maiores riscos TECNICOS do jogo. Pergunta: consigo construir isso? Deve conter apenas sistemas tecnicos criticos funcionando em testes isolados — nada precisa ser bonito, divertido ou completo. Exemplos: emulacao funcionando, mecanica de puxar energia implementada isoladamente, fisica de agua testada. Criterio para avançar: todos os riscos tecnicos principais foram resolvidos. NAO inclui gameplay completo, arte final, HUD, bosses completos ou divertimento.
-- prototype/prototipo: valida a DIVERSAO do jogo. Pergunta: isso e divertido? Deve conter o core loop completo e jogavel com assets temporarios: controle principal, uma arena/cenario de teste, uma interacao ou um boss/inimigo representativo, feedback minimo de jogabilidade. Pode ter arte feia, UI temporaria, sons provisorios. Criterio: jogadores se divertem, entendem o jogo e o loop principal funciona. NAO inclui todos os bosses, todos os biomas, sistemas finais, economia completa, UI final ou marketing.
+- poc/prova de conceito: GOLDEN RULE — exatamente 7 dias de desenvolvimento, sem excecoes. Jogo de jam com todas as mecanicas basicas funcionando e jogaveis. Pergunta: consigo fazer esse jogo? Deve conter o core loop jogavel com todas as mecanicas principais implementadas (mesmo que feias e sem polish), controles funcionando, feedback minimo de gameplay e algum objetivo claro para o jogador. Sacrifica qualquer coisa para caber em 7 dias: codigo feio, arte crua, sem audio, UI placeholder. Pode ser muito cru visualmente, mas precisa ser jogavel do inicio ao fim sem crashes. Criterio para avançar: todas as mecanicas basicas estao implementadas e o jogo e completavel em 7 dias de dev. NAO inclui arte final, audio final, UI polida, balanceamento, conteudo completo, bosses elaborados ou sistemas secundarios completos.
+- prototype/prototipo: valida a DIVERSAO do jogo. Pergunta: isso e divertido? Media de 5 meses, podendo ser mais. Deve conter apenas as mecanicas que sustentam o loop de gameplay — o que faz o jogo ser divertido de jogar, com algo visualmente interessante. NAO inclui infraestrutura de producao que vai alem do necessario para sustentar o loop: sem save/load, sem troca de fases/cenas, sem coleta de itens generica, sem inventario, sem menus completos, sem economia, sem sistemas secundarios. Criterio: um jogador joga e se diverte, entende o que o jogo e, quer continuar. NAO inclui: save/load, troca de fases, coleta de itens, inventario, economia, UI final, todos os bosses, todos os biomas, sistemas de progressao completos.
 - Arte no prototipo: incluir direcao visual jogavel minima alem de concept art — style guide, paleta, shape language, assets temporarios, placeholder visual, blockout de cenario, UI temporaria e VFX simples para o loop testavel.
 - demo: build publica para vender o jogo ao publico. Pergunta: alguem quer jogar isso? Deve conter o diferencial do jogo em um core loop redondo e fechado: caminho/arena jogavel, um personagem ou ponto de interacao quando relevante, uma luta/desafio principal, inicio-meio-fim claro, feedback visual/sonoro suficiente e estabilidade para evento/Steam Next Fest. Duracao ideal: 10 a 30 minutos.
-- vertical_slice: fatia real e polida do jogo com qualidade de lancamento. Pergunta: consigo terminar esse jogo nesse nivel de qualidade? Deve conter arte final, UI final, audio final, efeitos finais, normalmente uma fase, um chefe, uma missao. Suficiente para entender o que o jogo e apenas jogando essa parte. NAO e jogo inteiro.
+- vertical_slice: fatia real e polida do jogo com qualidade de lancamento. Pergunta: consigo terminar esse jogo nesse nivel de qualidade? Deve conter arte final, UI final, audio final, efeitos finais, normalmente uma fase, um chefe, uma missao — e tambem a infraestrutura necessaria para o jogo funcionar como sistema: save/load, troca de fases/cenas, fluxo de menus, coleta de itens se relevante. O jogador precisa conseguir jogar do inicio ao fim desse slice como se fosse o jogo real. Suficiente para entender o que o jogo e apenas jogando essa parte. NAO e jogo inteiro.
 - alpha: jogo completo em termos de sistemas e conteudo principal jogavel internamente. Todas as mecanicas, todos os sistemas, todas as areas — ainda com arte/audio/polish incompletos e bugs conhecidos. Nao entram novas mecanicas a partir daqui.
 - beta: conteudo completo, foco em balanceamento, QA externo, performance, usabilidade, localizacao e correcoes. Nao adicionar escopo novo relevante.
 - gold: candidate/master de lancamento, certificacao/submissao, zero bugs criticos, otimizacao final e checklist de plataforma.
@@ -2282,9 +2665,10 @@ Regras:
 - Verbos no título: Implementar, Modelar, Texturizar, Riger, Animar, Testar, Compor, Escrever, Projetar, Revisar
 - Descrição ULTRA-ESPECÍFICA: mencione ferramentas, parâmetros, entregável concreto
 - Tarefas pequenas: quebre qualquer entrega maior em passos de 1 ou 2 dias; granularidade pequena NAO muda a fase do escopo
-- Distribua escopo por fase: poc valida APENAS sistemas tecnicos criticos isoladamente (sem gameplay, sem arte final, sem bosses completos); prototipo valida a diversao com um recorte minimo jogavel; demo vende o core loop curto; vertical slice mostra uma fatia real polida; alpha completa sistemas/conteudo; beta/gold/release focam QA, polish e publicacao
+- Distribua escopo por fase: poc e GOLDEN RULE de 7 dias — jam com todas as mecanicas basicas jogaveis, sacrifica tudo para caber nesse prazo; prototipo valida a diversao em media 5 meses — so o que sustenta o loop, sem infraestrutura (sem save/load, sem troca de fases, sem coleta de itens, sem menus completos); demo vende o core loop curto; vertical slice mostra uma fatia polida com qualidade de lancamento E infraestrutura funcionando (save/load, troca de fases, fluxo de menus); alpha completa sistemas/conteudo; beta/gold/release focam QA, polish e publicacao
 - Se uma tarefa cita "todos", "todas", quantidade total de bosses/fases/biomas ou sistemas finais completos, ela NAO pertence ao poc, prototipo nem a demo
-- Tarefas de poc: apenas implementacao tecnica isolada, testes de viabilidade, spikes — sem arte, sem gameplay completo, sem HUD final
+- Tarefas de poc: implementar todas as mecanicas basicas em versao crua e jogavel — controles, loop principal, objetivo do jogo, feedback minimo. Sem arte final, sem audio final, sem balanceamento, sem conteudo completo
+- Tarefas de prototipo: apenas as mecanicas que sustentam o loop de diversao — o que faz o jogo ser divertido de jogar. Nao incluir infraestrutura de producao que vai alem do necessario para o loop funcionar: sem save/load, sem troca de fases/cenas, sem coleta de itens generica, sem inventario, sem menus completos, sem economia, sem sistemas secundarios
 - Arte: modelagem/UV/textura/rig/anims em tarefas separadas
 - Programação: lógica core / testes / integração / feedback visual separados
 - Design: rascunho / revisão / aprovação / iteração separados
@@ -2348,7 +2732,7 @@ Defina exatamente 8 marcos verificáveis, nesta ordem obrigatória:
 Os nomes dos marcos devem refletir o projeto real (ex: "PoC de [mecânica principal do jogo]", "Vertical Slice de [nome do jogo]").
 Nao pule poc nem demo. Nao trate poc como prototype. Nao trate prototype como vertical slice. Nao trate vertical slice como alpha.
 Use o GDD para escolher o menor recorte convincente de cada fase.
-Exemplos de proporcao: poc valida apenas os sistemas tecnicos criticos isoladamente (sem gameplay completo); prototype testa a diversao com um boss representativo e o core loop; demo tem caminho curto + interacao + desafio principal fechado; vertical_slice tem uma fatia polida com qualidade de lancamento.
+Exemplos de proporcao: poc e GOLDEN RULE de exatamente 7 dias — jam com TODAS as mecanicas basicas funcionando e jogaveis, sacrifica tudo para caber nesse prazo (cru, sem polish); prototype valida a diversao em media 5 meses — so o que sustenta o loop, sem infraestrutura (sem save/load, sem troca de fases, sem itens genericos); demo tem caminho curto + interacao + desafio principal fechado; vertical_slice tem uma fatia polida com qualidade de lancamento E infraestrutura funcionando como sistema (save/load, troca de fases, fluxo de menus).
 
 Retorne APENAS o Markdown:
 
@@ -2374,18 +2758,42 @@ function buildConsolidatedMD(phase1md, subareaList, phase3mds, phase4md) {
     return `${phase1md}\n\n# ROADMAP DETALHADO\n\n${sprintSections}\n\n${phase4md}`;
 }
 
+// Formata o mês de um milestone para exibição.
+// month < 1 é tratado como semanas (0.25 = ~1 semana, 0.5 = ~2 semanas).
+function formatMilestoneMonth(month) {
+    if (month < 1) {
+        const weeks = Math.max(1, Math.round(month * 4));
+        return weeks === 1 ? '1ª semana' : `${weeks}ª semana`;
+    }
+    const n = Math.round(month);
+    return `Mês ${n}`;
+}
+
 function normalizeMilestoneSequence(milestones, totalMonths = 24) {
     const phaseOrder = ['poc', 'prototype', 'demo', 'vertical_slice', 'alpha', 'beta', 'gold', 'release'];
-    const phaseDefaults = {
-        poc:            { title: 'PoC — Validação Técnica', ratio: 0.08 },
-        prototype:      { title: 'Prototipo Jogavel', ratio: 0.2 },
-        demo:           { title: 'Demo Jogavel', ratio: 0.36 },
-        vertical_slice: { title: 'Vertical Slice', ratio: 0.52 },
-        alpha:          { title: 'Alpha Interna', ratio: 0.68 },
-        beta:           { title: 'Beta Fechada', ratio: 0.84 },
-        gold:           { title: 'Gold Master', ratio: 0.94 },
-        release:        { title: 'Lancamento', ratio: 1 },
+
+    // poc: sem valor fixo, cai em ~10% do projeto como fallback
+    // prototype: golden rule 7 dias — sempre 0.25 meses, nunca muda
+    // demais fases: distribuídas entre o mês do prototype e o total
+    const getDefaultMonth = (type, total) => {
+        if (type === 'poc')       return 0.25;                            // golden rule: 7 dias
+        if (type === 'prototype') return 5;                               // média de 5 meses, pode ser mais
+        // fases restantes distribuídas entre mês 1 (após proto) e o total
+        const remaining = { demo: 0.3, vertical_slice: 0.5, alpha: 0.68, beta: 0.84, gold: 0.94, release: 1 };
+        return 1 + (total - 1) * remaining[type];
     };
+
+    const phaseDefaults = {
+        poc:            { title: 'PoC — Jam Build (7 dias)' },
+        prototype:      { title: 'Prototipo Jogavel' },
+        demo:           { title: 'Demo Jogavel' },
+        vertical_slice: { title: 'Vertical Slice' },
+        alpha:          { title: 'Alpha Interna' },
+        beta:           { title: 'Beta Fechada' },
+        gold:           { title: 'Gold Master' },
+        release:        { title: 'Lancamento' },
+    };
+
     const normalizeType = (typeof WorkBacklogHelpers !== 'undefined' && WorkBacklogHelpers.normalizeMilestoneType)
         ? WorkBacklogHelpers.normalizeMilestoneType
         : (type => type);
@@ -2405,8 +2813,12 @@ function normalizeMilestoneSequence(milestones, totalMonths = 24) {
     return phaseOrder.map((type, index) => {
         const defaults = phaseDefaults[type];
         const existing = byType.get(type) || {};
-        const defaultMonth = Math.max(1, Math.round((totalMonths || 24) * defaults.ratio));
-        const month = Math.min(totalMonths || 24, Math.max(lastMonth + 1, existing.month || defaultMonth));
+        const defaultMonth = getDefaultMonth(type, totalMonths || 24);
+        // poc: golden rule de 7 dias — sempre forçamos 0.25 meses, ignora o que a IA gerou
+        // prototype: usa o valor da IA se gerou algo razoável, senão cai no padrão de 5 meses
+        const forceDefault = type === 'poc';
+        const raw = forceDefault ? defaultMonth : (existing.month || defaultMonth);
+        const month = Math.min(totalMonths || 24, Math.max(lastMonth + 0.25, raw));
         lastMonth = month;
 
         return {
@@ -2439,21 +2851,44 @@ async function mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNorm
         description: overviewFromMD.description || gddNormalizado?.sinopse || '',
     };
 
-    const subareasFromMD = extractSubareasFromMD(consolidatedMD);
+    // Detecta qual versão do fluxo gerou este MD
+    const isV2 = consolidatedMD.includes('## MARCO:');
+
     const milestones = normalizeMilestoneSequence(
         parseMDMilestones(consolidatedMD),
         overview.totalDurationMonths
     );
 
-    // Parsear objetivos + KRs + tarefas do MD de sprints
-    const objectives = parseMDSprints(consolidatedMD, subareasFromMD);
+    // Parsear objetivos + KRs + tarefas — usa parser adequado ao fluxo
+    let objectives;
+    if (isV2) {
+        // Novo fluxo: milestones já foram extraídos acima, features/tasks no novo formato
+        const milestoneListFromMD = extractMilestonesFromMD(consolidatedMD);
+        objectives = parseMDSprints_v2(consolidatedMD, milestoneListFromMD);
+        // Atribui milestoneId com base no milestoneType já gravado em cada task
+        objectives.forEach(obj => {
+            const ms = milestones.find(m => m.type === obj.milestoneType);
+            if (ms) {
+                obj.startMonth = ms.month ? Math.max(1, Math.round(ms.month * 0.7)) : 1;
+                obj.endMonth = ms.month || 3;
+                (obj.keyResults || []).forEach(kr => {
+                    (kr.tasks || []).forEach(t => { t.milestoneId = ms.id; });
+                });
+            }
+        });
+    } else {
+        const subareasFromMD = extractSubareasFromMD(consolidatedMD);
+        objectives = parseMDSprints(consolidatedMD, subareasFromMD);
+    }
 
     // Calcular pontos de sprint e recalcular duração real dos objetivos
-    assignSprintPoints(objectives, overview.totalDurationMonths);
+    // v2: skipLayout=true porque scheduleRoadmap faz o layout respeitando milestone order
+    assignSprintPoints(objectives, overview.totalDurationMonths, isV2 /* skipLayout */);
 
-    // Atribuir milestoneId a todas as tarefas com base na posição do KR
-    // dentro da timeline do objetivo (curva: M1 leve → pico M3/M4 → M5/M6 enxutos)
-    assignMilestoneIds(objectives, milestones);
+    // Atribuir milestoneId às tarefas.
+    // No v2, milestoneId já foi setado por design (fase → feature → task) — preserveExisting=true.
+    // No v1, milestoneId é atribuído por heurística — preserveExisting=false.
+    assignMilestoneIds(objectives, milestones, isV2 /* preserveExisting */);
 
     // Gerar edital summary via API
     let editalSummary = null;
@@ -2565,7 +3000,9 @@ function assignMilestoneIds(objectives, milestones, preserveExisting = false) {
 const SPRINT_CAPACITY_POINTS = 10; // pontos por sprint (10 dias úteis = 2 semanas)
 const SPRINT_DURATION_WEEKS = 2;
 
-function assignSprintPoints(objectives, totalMonths) {
+// skipLayout=true → só calcula estimatedWeeks/sprintCount/points, não toca startMonth/endMonth
+// (usado no v2 onde o scheduleRoadmap é a única fonte de verdade para o layout)
+function assignSprintPoints(objectives, totalMonths, skipLayout = false) {
     const tMonths = totalMonths || 24;
 
     // ── Fase 1: calcular carga real de cada objetivo ─────────────
@@ -2585,7 +3022,6 @@ function assignSprintPoints(objectives, totalMonths) {
 
     // ── Fase 1b: atribuir sprintNumber sequencial por área ───────
     const sprintCounterByArea = {};
-    // Ordena objectives por startMonth para numerar sprints em ordem cronológica
     const sorted = [...objectives].sort((a, b) => (a.startMonth||0) - (b.startMonth||0));
     sorted.forEach(obj => {
         const area = obj.area || 'generic';
@@ -2597,13 +3033,12 @@ function assignSprintPoints(objectives, totalMonths) {
         });
     });
 
+    if (skipLayout) return; // v2: scheduleRoadmap faz o layout respeitando milestone order
+
     // ── Fase 2: redistribuir objetivos ao longo de tMonths ───────
-    // Se todos os endMonth ficaram ≤ 12 mas o projeto tem mais meses,
-    // redistribuímos os objetivos proporcionalmente pela duração real.
     const maxEndMonth = Math.max(...objectives.map(o => o.endMonth || 1));
 
     if (maxEndMonth <= 12 && tMonths > 12) {
-        // Calcular duração total real somando todos os objetivos em sequência
         const totalRealMonths = objectives.reduce((s, o) => s + o._durationMonths, 0);
         const scale = tMonths / Math.max(totalRealMonths, tMonths);
 
@@ -2615,7 +3050,6 @@ function assignSprintPoints(objectives, totalMonths) {
             cursor = obj.endMonth + 1;
         });
     } else {
-        // Apenas ajusta endMonth se a carga real exigir mais que o previsto
         objectives.forEach(obj => {
             if (obj.startMonth && obj.endMonth) {
                 const minEnd = obj.startMonth + obj._durationMonths - 1;
@@ -2667,6 +3101,8 @@ const AREA_COLORS = {
 
 /**
  * Agenda os KRs de cada objetivo usando earliest-free worker por área.
+ * Respeita a ordem de milestones: nenhum KR de uma fase começa antes que
+ * TODOS os KRs da fase anterior (de qualquer área) estejam concluídos.
  * Retorna { objectives: [...], totalWeeks, totalMonths }
  */
 function scheduleRoadmap(objectives, teamConfig) {
@@ -2684,34 +3120,96 @@ function scheduleRoadmap(objectives, teamConfig) {
         keyResults: (obj.keyResults || []).map(kr => ({ ...kr, tasks: (kr.tasks || []).map(t => ({ ...t })) }))
     }));
 
-    // Para cada objetivo, agendar seus KRs
+    // Ordem canônica dos milestones para garantir sequência correta
+    const MILESTONE_ORDER = ['poc', 'prototype', 'demo', 'vertical_slice', 'alpha', 'beta', 'gold', 'release'];
+
+    // Agrupa objectives por milestoneType, preservando a ordem canônica
+    const byMilestone = {};
     scheduled.forEach(obj => {
-        const area = obj.area || 'programming';
-        const pool = workers[area] || workers.programming;
+        const ms = obj.milestoneType || 'prototype';
+        if (!byMilestone[ms]) byMilestone[ms] = [];
+        byMilestone[ms].push(obj);
+    });
 
-        (obj.keyResults || []).forEach(kr => {
-            // Pega o trabalhador mais livre desta área
-            const workerIdx = pool.indexOf(Math.min(...pool));
-            const startWeek = pool[workerIdx]; // semana 0-indexed
-            const durationWeeks = kr.estimatedWeeks || 2;
-            const endWeek = startWeek + durationWeeks;
+    // Processa fase a fase em ordem canônica
+    // Constraint: uma nova fase só começa após a semana mais tarde de qualquer área da fase anterior
+    let phaseStartWeek = 0;
 
-            kr.scheduledStartWeek = startWeek;
-            kr.scheduledEndWeek   = endWeek;
+    for (const msType of MILESTONE_ORDER) {
+        const objs = byMilestone[msType];
+        if (!objs || objs.length === 0) continue;
 
-            // Avança o trabalhador
-            pool[workerIdx] = endWeek;
+        // Garante que todos os workers comecem no mínimo em phaseStartWeek
+        for (const area of Object.keys(workers)) {
+            workers[area] = workers[area].map(w => Math.max(w, phaseStartWeek));
+        }
+
+        // Agenda os KRs desta fase
+        objs.forEach(obj => {
+            const area = obj.area || 'programming';
+            const pool = workers[area] || workers.programming;
+
+            (obj.keyResults || []).forEach(kr => {
+                const workerIdx = pool.indexOf(Math.min(...pool));
+                const startWeek = pool[workerIdx];
+                const durationWeeks = kr.estimatedWeeks || 2;
+                const endWeek = startWeek + durationWeeks;
+
+                kr.scheduledStartWeek = startWeek;
+                kr.scheduledEndWeek   = endWeek;
+
+                pool[workerIdx] = endWeek;
+            });
+
+            const krStarts = obj.keyResults.map(kr => kr.scheduledStartWeek ?? phaseStartWeek);
+            const krEnds   = obj.keyResults.map(kr => kr.scheduledEndWeek   ?? (phaseStartWeek + 2));
+
+            obj.startMonth = Math.ceil((Math.min(...krStarts) + 1) / 4.33);
+            obj.endMonth   = Math.ceil(Math.max(...krEnds) / 4.33);
         });
 
-        // startMonth/endMonth do objetivo = envelope de todos os seus KRs
-        const krStarts = obj.keyResults.map(kr => kr.scheduledStartWeek ?? 0);
-        const krEnds   = obj.keyResults.map(kr => kr.scheduledEndWeek   ?? 2);
-        const startWeek = Math.min(...krStarts);
-        const endWeek   = Math.max(...krEnds);
+        // A próxima fase começa após o KR mais tardio desta fase (em qualquer área)
+        const allPhaseEnds = Object.values(workers).flat();
+        phaseStartWeek = Math.max(...allPhaseEnds);
+    }
 
-        obj.startMonth = Math.floor(startWeek / 4.33) + 1;
-        obj.endMonth   = Math.ceil(endWeek / 4.33);
+    // Objectives sem milestoneType vão ao final
+    const untyped = scheduled.filter(obj => !obj.milestoneType || !MILESTONE_ORDER.includes(obj.milestoneType));
+    untyped.forEach(obj => {
+        const area = obj.area || 'programming';
+        const pool = workers[area] || workers.programming;
+        (obj.keyResults || []).forEach(kr => {
+            const workerIdx = pool.indexOf(Math.min(...pool));
+            const startWeek = pool[workerIdx];
+            const endWeek = startWeek + (kr.estimatedWeeks || 2);
+            kr.scheduledStartWeek = startWeek;
+            kr.scheduledEndWeek   = endWeek;
+            pool[workerIdx] = endWeek;
+        });
+        const krEnds = obj.keyResults.map(kr => kr.scheduledEndWeek ?? 2);
+        obj.startMonth = Math.ceil((Math.min(...obj.keyResults.map(kr => kr.scheduledStartWeek ?? 0)) + 1) / 4.33);
+        obj.endMonth   = Math.ceil(Math.max(...krEnds) / 4.33);
     });
+
+    // ── Pass final: garante que startMonth de cada fase > endMonth da anterior ──
+    // Necessário porque meses têm resolução menor que semanas (2 semanas = mês 1)
+    const phaseEndMonths = {};
+    for (const msType of MILESTONE_ORDER) {
+        const objs = scheduled.filter(o => o.milestoneType === msType);
+        if (!objs.length) continue;
+        const prevPhaseEnd = MILESTONE_ORDER
+            .slice(0, MILESTONE_ORDER.indexOf(msType))
+            .reduce((max, prev) => Math.max(max, phaseEndMonths[prev] || 0), 0);
+        // Força startMonth de todos os objectives desta fase a ser > prevPhaseEnd
+        objs.forEach(obj => {
+            if (obj.startMonth <= prevPhaseEnd) {
+                const shift = prevPhaseEnd + 1 - obj.startMonth;
+                obj.startMonth += shift;
+                obj.endMonth   += shift;
+            }
+        });
+        phaseEndMonths[msType] = Math.max(...objs.map(o => o.endMonth));
+    }
 
     // Duração total do projeto = semana mais tardia de qualquer trabalhador
     const allFreeWeeks = Object.values(workers).flat();
@@ -2774,6 +3272,117 @@ function calculateObjectiveCost(obj) {
     });
     const hours = days * HOURS_PER_ESTIMATED_DAY;
     return { tasks, days, hours, cost: hours * rate };
+}
+
+// ---- Parser v2: converte MD do novo fluxo (milestone→feature→tasks) para objectives/KRs/tasks ----
+
+function parseMDSprints_v2(md, milestoneList) {
+    const objectives = [];
+    const roadmapSection = md.match(/# ROADMAP DETALHADO\n([\s\S]*?)(?=$)/);
+    if (!roadmapSection) return objectives;
+
+    // Cada ## MARCO: é um grupo de features
+    const marcoBlocks = roadmapSection[1].split(/\n## MARCO:/);
+    let objIdx = 0;
+
+    for (const marcoBlock of marcoBlocks.slice(1)) {
+        const marcoLines = marcoBlock.split('\n');
+        const marcoHeader = marcoLines[0].trim(); // "Nome do Marco (tipo)"
+        const typeMatch = marcoHeader.match(/\(([^)]+)\)$/);
+        const msType = typeMatch ? typeMatch[1].trim() : 'prototype';
+        const ms = milestoneList.find(m => m.type === msType) || { id: `ms_${msType}`, type: msType, title: marcoHeader };
+
+        // Cada ### FEATURE [area]: é um KR
+        const featureBlocks = marcoBlock.split(/\n### FEATURE/);
+        for (const ftBlock of featureBlocks.slice(1)) {
+            const ftLines = ftBlock.split('\n');
+            const ftHeader = ftLines[0].trim(); // " [area:programming]: Nome da Feature"
+            const areaMatch = ftHeader.match(/\[area:\s*([^\]]+)\]/i);
+            const ftArea = areaMatch ? areaMatch[1].trim().toLowerCase() : 'programming';
+            // Remove [area:xxx] incluindo o ]: que segue, depois remove Feature N:, depois : solto
+            const ftTitle = ftHeader
+                .replace(/\[area:[^\]]+\]\s*:?\s*/i, '')
+                .replace(/^Feature\s+\d+:\s*/i, '')
+                .replace(/^:\s*/, '')
+                .trim();
+
+            const objective = {
+                id: `obj_${msType}_${objIdx}`,
+                title: ftTitle || marcoHeader,
+                description: ftTitle,
+                area: ftArea,
+                subarea: ftTitle.toLowerCase().replace(/\s+/g, '-').substring(0, 40),
+                startMonth: 1,
+                endMonth: 3,
+                milestoneType: msType,
+                milestoneId: ms.id,
+                priority: 'high',
+                keyResults: []
+            };
+
+            // Cada ## dentro do bloco da feature é o MD de tasks
+            // Tasks: "- [ ] Título >> Descrição | Nd | prioridade | tipo"
+            const kr = {
+                id: `${objective.id}_kr1`,
+                title: ftTitle,
+                description: ftTitle,
+                estimatedWeeks: 2,
+                dependencies: [],
+                tasks: []
+            };
+
+            let taskIdx = 0;
+            for (const line of ftLines.slice(1)) {
+                const taskMatch = line.match(/^-\s+\[[ x]\]\s+(.+?)\s*\|\s*(\d+)d\s*\|\s*(\w+)\s*\|\s*(\w+)/);
+                if (taskMatch) {
+                    const rawTitle = taskMatch[1].trim();
+                    const sepIdx = rawTitle.indexOf('>>');
+                    const title = sepIdx >= 0 ? rawTitle.slice(0, sepIdx).trim() : rawTitle;
+                    const description = sepIdx >= 0 ? rawTitle.slice(sepIdx + 2).trim() : '';
+                    kr.tasks.push({
+                        id: `${kr.id}_t${taskIdx + 1}`,
+                        title,
+                        description,
+                        estimatedDays: Math.min(2, Math.max(1, parseInt(taskMatch[2]))),
+                        priority: taskMatch[3].trim(),
+                        type: taskMatch[4].trim(),
+                        milestoneId: ms.id,
+                        milestoneType: msType,
+                    });
+                    taskIdx++;
+                }
+            }
+
+            // Fallback: tenta também o bloco de MD do phase3 que pode ter cabeçalho ## NomeFt
+            if (kr.tasks.length === 0) {
+                for (const line of ftLines.slice(1)) {
+                    const altTask = line.match(/^[-*]\s+\[[ x]\]\s+(.{5,})/);
+                    if (altTask) {
+                        const raw = altTask[1].trim();
+                        const sepIdx = raw.indexOf('>>');
+                        kr.tasks.push({
+                            id: `${kr.id}_t${kr.tasks.length + 1}`,
+                            title: sepIdx >= 0 ? raw.slice(0, sepIdx).trim() : raw,
+                            description: sepIdx >= 0 ? raw.slice(sepIdx + 2).trim() : '',
+                            estimatedDays: 2,
+                            priority: 'medium',
+                            type: 'feature',
+                            milestoneId: ms.id,
+                            milestoneType: msType,
+                        });
+                    }
+                }
+            }
+
+            if (kr.tasks.length > 0) {
+                objective.keyResults.push(kr);
+                objectives.push(objective);
+                objIdx++;
+            }
+        }
+    }
+
+    return objectives;
 }
 
 // ---- Parsers MD → estruturas JS ----
@@ -3033,7 +3642,7 @@ async function generateEditalSummary(sprintResult, milestoneResult, genreCtx, ap
             t + (kr.tasks || []).reduce((tt, task) => tt + (task.estimatedDays || 2), 0), 0), 0);
 
     const milestonesSummary = (milestoneResult.milestones || [])
-        .map(m => `  - Marco ${m.month}º mês: "${m.title}" — ${m.description}`)
+        .map(m => `  - Marco ${formatMilestoneMonth(m.month)}: "${m.title}" — ${m.description}`)
         .join('\n');
 
     const areaBreakdown = {};
@@ -3201,7 +3810,7 @@ function setLoadingMessage(message) {
 }
 
 function setLoadingPhase(phase, message) {
-    // step0 = Normalizando GDD, step1 = Sub-áreas, step2 = KRs, step3 = Sprints, step4 = Milestones, step5 = Finalizando
+    // step0 = Normalizando GDD, step1 = Milestones, step2 = Features, step3 = Tasks, step4 = Cronograma, step5 = Finalizando
     const stepIds = ['step0', 'step1', 'step2', 'step3', 'step4', 'step5'];
 
     stepIds.forEach((id, index) => {
@@ -4503,7 +5112,7 @@ function exportEditalText() {
         '',
         '== MARCOS DO PROJETO ==',
         ...(analysisResult.milestones || []).map(m =>
-            `• Mês ${m.month} — ${m.title}: ${m.description}`
+            `• ${formatMilestoneMonth(m.month)} — ${m.title}: ${m.description}`
         )
     ].join('\n');
 
@@ -4612,7 +5221,7 @@ function populateTasksByMilestone() {
         const color = milestone ? milestoneColors[colorIdx % milestoneColors.length] : '#9ca3af';
         const icon = milestone ? (milestoneIcons[milestone.type] || '🏁') : '📌';
         const label = milestone ? milestone.title : 'Sem Marco';
-        const monthLabel = milestone ? `até mês ${milestone.month}` : '';
+        const monthLabel = milestone ? `até ${formatMilestoneMonth(milestone.month)}` : '';
 
         const groupHeader = document.createElement('div');
         groupHeader.className = 'milestone-group-header';
@@ -6788,7 +7397,7 @@ function workRenderMilestoneFilters() {
                 <span class="work-ms-suggestion-icon">${typeIcons[ms.type] || '📍'}</span>
                 <span class="work-ms-suggestion-main">
                     <span class="work-ms-suggestion-title">${ms.title}</span>
-                    <span class="work-ms-suggestion-meta">Mês ${ms.month || '—'} · ${ms.type || ms.id}</span>
+                    <span class="work-ms-suggestion-meta">${ms.month ? formatMilestoneMonth(ms.month) : '—'} · ${ms.type || ms.id}</span>
                 </span>
             `;
             option.addEventListener('mousedown', e => e.preventDefault());
