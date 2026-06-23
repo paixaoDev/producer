@@ -2034,16 +2034,27 @@ ${roadmapPhaseContractText()}
 REGRA CRÍTICA: NÃO defina períodos ou meses para as áreas. Apenas descreva O QUE deve existir em cada marco. O cronograma será calculado automaticamente a partir das tasks criadas nas fases seguintes.
 
 PASSO 1 — IDENTIFIQUE A MECÂNICA PRIORITÁRIA E O LOOP MÍNIMO DA POC:
-Antes de definir os marcos, identifique o diferencial real do jogo (não o gênero). Pense:
-- O que o jogador FAZ no jogo? (verbo principal)
-- O que REAGE a isso? (enemy, world, physics)
-- Qual é o LOOP MÍNIMO JOGÁVEL? (ex: boss rush = atirar → acertar boss → boss atira de volta → jogador morre ou vence)
-A PoC deve conter esse loop mínimo completo — sem arte, sem som, mas JOGÁVEL de ponta a ponta.
-Exemplos por gênero:
-- Boss rush: player ataca → boss recebe dano → boss atira → player pode morrer → resultado (vitória/derrota)
-- Plataformer: player pula → colisão com plataforma → obstáculo mata → fase termina
-- Puzzle: peças se movem → condição de vitória detectada → próximo nível
-NUNCA crie uma PoC que só testa a mecânica de input isolada (ex: só o arpão sem o boss). A PoC valida o LOOP COMPLETO.
+Antes de definir os marcos, responda estas perguntas sobre o jogo:
+1. O que o jogador FAZ? (verbo principal — atacar, pular, empurrar, construir, investigar, fugir)
+2. O que REAGE a isso? (inimigo, física, mundo, puzzle, outro jogador, tempo)
+3. Qual é a CONDIÇÃO DE FIM? (vitória, derrota, próxima fase, game over, fim de turno)
+Esse é o loop mínimo. A PoC deve conter esse loop completo, de ponta a ponta, mesmo que cru.
+
+REGRA FUNDAMENTAL: a PoC NUNCA testa só a entrada do jogador em isolamento.
+A PoC testa o CICLO COMPLETO: ação → reação → resultado.
+
+Exemplos corretos por gênero:
+- Boss rush: player ataca → boss recebe dano E reage (atira de volta) → player pode morrer OU vencer → loop reinicia ou termina
+- Plataformer: player move/pula → colisão com terreno → obstáculo ou buraco causa morte → checkpoint ou game over ativa
+- Puzzle: player move peça → estado do puzzle muda → condição de vitória é verificada → nível avança ou continua
+- RPG/dungeon: player seleciona ação de combate → inimigo recebe dano E age no turno dele → HP zera → combate termina
+- Horror/stealth: player se move → inimigo detecta (visão/som) → player é perseguido → escapa ou é capturado
+- Estratégia: player posiciona/move unidade → unidade executa ação (ataque/defesa) → recursos mudam → condição de vitória/derrota é avaliada
+- Roguelike: player entra em sala → inimigos geram → player luta → sala termina → próxima sala ou morte permanente
+- Puzzle-platformer: player usa habilidade especial → ambiente reage (bloco move, luz muda) → caminho se abre → próxima seção
+- Narrativa/VN: player escolha diálogo → personagem reage → estado da relação/história muda → próxima cena
+
+NUNCA crie uma PoC que só valida o controle/input isolado. A PoC valida o LOOP COMPLETO.
 
 GDD DO PROJETO:
 ${gddText}
@@ -2194,34 +2205,53 @@ REGRAS GERAIS:
 - Cada feature é um objetivo verificável, independente
 - Respeite estritamente o escopo do marco (não coloque no poc o que é do alpha)
 - Quantidade de features por marco (siga esses limites):
-  poc: 4-6 features (loop mínimo, tudo cru)
-  prototype: 6-10 features (loop completo jogável, primeiro boss real, arte placeholder, HUD)
-  demo: 5-8 features (sequência narrativa, polimento suficiente)
+  poc: 4-6 features (loop mínimo completo — ação + reação + condição de fim)
+  prototype: 6-10 features (loop de diversão + principal antagonista/desafio real + arte de ambiente + HUD)
+  demo: 5-8 features (sequência início-meio-fim, polimento suficiente para evento)
   vertical_slice: 6-10 features (infraestrutura: save/load, menus, qualidade de lançamento)
-  alpha: 8-12 features (todos os sistemas, todo o conteúdo principal)
-  beta: 5-8 features (balanceamento, QA, localização)
-  gold: 4-6 features (certificação, build master)
-  release: 4-6 features (publicação, monitoramento)
+  alpha: 8-12 features (todos os sistemas, todo o conteúdo principal completo)
+  beta: 5-8 features (balanceamento, QA, localização, performance)
+  gold: 4-6 features (certificação, build master, zero bugs críticos)
+  release: 4-6 features (publicação, loja, monitoramento)
 - NUNCA repita features que são do marco anterior — cada marco adiciona algo novo
-- Pense nos SISTEMAS que precisam existir para suportar o conteúdo (ex: state machine de boss antes de criar ataques específicos)
+- Priorize SISTEMAS antes de CONTEÚDO: o sistema precisa existir antes de criar instâncias dele
+  (ex: sistema de IA de inimigo → depois criar inimigos específicos; sistema de diálogo → depois criar diálogos)
+- O Prototype DEVE incluir o principal antagonista/obstáculo/desafio do jogo com comportamento real,
+  não apenas o sistema de controle do jogador
 
-REGRAS ESPECÍFICAS POR TIPO:
-${ms.type === 'poc' ? `POC (7 dias):
-- OBRIGATÓRIO: inclua o LOOP DE COMBATE MÍNIMO — player ataca → enemy reage → enemy ataca → player pode morrer/vencer
-- NUNCA inclua: arte final, cenário, som, UI polida, save/load, menus
-- Foco: mecânica core funcionando de ponta a ponta, tudo cru (primitivos, sem textura)
-- O jogador deve conseguir jogar uma "partida" mesmo que feia` : ''}
-${ms.type === 'prototype' ? `PROTÓTIPO (loop completo jogável):
-- OBRIGATÓRIO de arte: cenário/ambiente jogável (mesmo que simples), arte placeholder dos personagens principais
-- Não repita features da PoC — assuma que tudo da PoC já existe
-- Adicione: primeiro boss real com comportamentos, cenário jogável, HUD básico, game loop (morte/reinício)
-- Arte de cenário é OBRIGATÓRIA no protótipo — sem cenário o jogo não tem contexto` : ''}
-${ms.type === 'demo' ? `DEMO (sequência narrativa curta):
-- Assuma que o loop de combate e protótipo já existem
-- Adicione: sequência de início-meio-fim, narrativa básica, polimento visual suficiente para evento` : ''}
-${(ms.type === 'alpha' || ms.type === 'vertical_slice') ? `${ms.type.toUpperCase()}:
-- Assuma que tudo das fases anteriores existe
-- Expanda conteúdo: todos os bosses, todas as fases, todos os sistemas` : ''}
+REGRAS ESPECÍFICAS POR TIPO DE MARCO:
+${ms.type === 'poc' ? `POC (7 dias — loop mínimo completo):
+- OBRIGATÓRIO: o jogador executa a ação principal → algo reage → existe condição de fim.
+  Exemplos: boss atira de volta | plataforma colide | puzzle detecta vitória | inimigo persegue | turno do oponente
+- NUNCA inclua: arte final, cenário detalhado, áudio, UI polida, save/load, menus, conteúdo além do mínimo
+- Foco: mecânica core FUNCIONANDO de ponta a ponta, tudo cru (primitivos geométricos, sem textura)
+- O jogador DEVE conseguir completar uma "rodada" do início ao fim, mesmo que feia` : ''}
+${ms.type === 'prototype' ? `PROTÓTIPO (loop de diversão com antagonista/desafio real):
+- OBRIGATÓRIO de programação: o principal antagonista/obstáculo/desafio do jogo com comportamento real
+  (state machine, IA de perseguição, geração de puzzle avançado, oponente com estratégia — depende do gênero)
+- OBRIGATÓRIO de arte: ambiente/cenário jogável com contexto visual (blockout ou placeholder, não primitivos)
+- OBRIGATÓRIO: game loop de falha/reinício funcional e HUD mínimo com informações essenciais
+- NÃO repita features da PoC — assuma que tudo da PoC já existe e está funcionando
+- NÃO inclua: save/load, menus polidos, todo o conteúdo do jogo, sistemas secundários completos` : ''}
+${ms.type === 'demo' ? `DEMO (sequência narrativa para evento):
+- Assuma que todo o Prototype existe e funciona
+- OBRIGATÓRIO: narrativa de abertura/contexto, sequência com início-meio-fim, polimento visual e sonoro básico
+- O diferencial do jogo deve estar visível e impressionar em 15-30 minutos de gameplay` : ''}
+${ms.type === 'vertical_slice' ? `VERTICAL SLICE (fatia de qualidade de lançamento):
+- Assuma que a Demo existe
+- OBRIGATÓRIO: arte final em 1 seção/fase, áudio final, UI final, save/load, troca de fases, fluxo de menus completo
+- O jogador joga do início ao fim desse slice como se fosse o jogo publicado` : ''}
+${ms.type === 'alpha' ? `ALPHA (jogo completo internamente):
+- Assuma que o VS existe
+- OBRIGATÓRIO: todos os sistemas, todo o conteúdo principal (todos os bosses/fases/missões), todos os personagens
+- Arte e áudio podem estar incompletos; bugs são aceitáveis; zero mecânicas novas a partir daqui` : ''}
+${ms.type === 'beta' ? `BETA (qualidade, não escopo):
+- Conteúdo 100% completo. Zero features novas.
+- Foco: balanceamento baseado em dados, QA externo, performance, localização, acessibilidade` : ''}
+${ms.type === 'gold' ? `GOLD (candidato a lançamento):
+- Zero bugs críticos. Checklist de certificação de plataforma. Build master finalizada.` : ''}
+${ms.type === 'release' ? `RELEASE (publicação e suporte):
+- Publicação nas lojas, comunicação de lançamento, monitoramento de crashes, hotfixes, suporte à comunidade` : ''}
 
 Retorne APENAS o Markdown:
 
@@ -2318,20 +2348,32 @@ Crie as tasks de sprint que implementam essa feature. Cada task = 1 ou 2 dias de
 FORMATO: título >> descrição técnica | Nd | prioridade | tipo
 
 Regras:
-- Verbos no título: Implementar, Modelar, Texturizar, Riger, Animar, Testar, Compor, Projetar, Revisar
-- Descrição: ferramenta, parâmetro, entregável concreto
+- Verbos no título: Implementar, Modelar, Texturizar, Rigar, Animar, Testar, Compor, Projetar, Revisar, Integrar, Configurar, Balancear, Documentar
+- Descrição: ferramenta ou engine usada, parâmetro técnico, entregável concreto verificável
 - Prioridade: critical | high | medium | low
 - Tipo: feature | art | design | audio | test | fix | config | doc
 - Quantidade de tasks por feature (calibrado por fase):
-  poc: 3-5 tasks (loop mínimo, sem arte)
-  prototype: 5-8 tasks (sistemas completos com arte placeholder)
-  demo: 5-8 tasks (polimento narrativo e visual)
-  vertical_slice: 6-10 tasks (infraestrutura + qualidade de lançamento)
-  alpha: 6-10 tasks (sistemas completos + todo conteúdo)
-  beta+: 4-7 tasks (ajustes, QA, submissão)
+  poc: 3-5 tasks (loop mínimo, tudo cru — sem arte, sem áudio)
+  prototype: 5-8 tasks (sistemas completos com arte placeholder — state machine, física, IA)
+  demo: 5-8 tasks (polimento narrativo, visual e sonoro básico)
+  vertical_slice: 6-10 tasks (infraestrutura completa + arte/áudio final de 1 seção)
+  alpha: 6-10 tasks (expansão de conteúdo — todos os sistemas já existem)
+  beta+: 4-7 tasks (ajustes, QA, submissão, localização)
 - Duração: 1 ou 2 dias por task
-- Use nomes reais do GDD (personagens, mecânicas, ambientes)
-- Pense nas subtarefas reais: um sistema de state machine precisa de: design dos estados, implementação base, integração com animator, cada estado individual, testes
+- Use nomes REAIS do GDD (personagens, mecânicas específicas, ambientes nomeados)
+- REGRA DE SISTEMAS ANTES DE CONTEÚDO:
+  Em features de programação no Prototype, crie as tasks na ordem certa:
+  1. Implementar a BASE do sistema (estrutura de dados, interface, estados)
+  2. Implementar cada comportamento/estado individual
+  3. Integrar com o motor de animação/física/IA
+  4. Testar o sistema isolado
+  5. Integrar ao game loop principal
+  Exemplo correto para IA de inimigo no Prototype:
+  - "Implementar StateMachine base para inimigo >> classe abstrata com estados enum, transições e callbacks | 2d | critical | feature"
+  - "Implementar estado Idle/Patrulha >> navmesh agent com waypoints, velocidade e campo de visão configuráveis | 1d | high | feature"
+  - "Implementar estado Alerta/Perseguição >> detecção por raio + ângulo, transição para perseguição quando player detectado | 2d | high | feature"
+  - "Implementar estado Ataque >> hitbox ativada, dano aplicado ao player, cooldown configurável | 1d | critical | feature"
+  - "Testar ciclo completo de IA >> rodar cenas de teste com 3 inimigos, validar todas as transições de estado | 1d | high | test"
 
 Retorne APENAS o Markdown:
 
@@ -2528,16 +2570,61 @@ function extractSubareasFromMD(md) {
 }
 
 function roadmapPhaseContractText() {
-    return `CONTRATO DAS FASES DO ROADMAP:
-- poc/prova de conceito: GOLDEN RULE — exatamente 7 dias de desenvolvimento, sem excecoes. Jogo de jam com todas as mecanicas basicas funcionando e jogaveis. Pergunta: consigo fazer esse jogo? Deve conter o core loop jogavel com todas as mecanicas principais implementadas (mesmo que feias e sem polish), controles funcionando, feedback minimo de gameplay e algum objetivo claro para o jogador. Sacrifica qualquer coisa para caber em 7 dias: codigo feio, arte crua, sem audio, UI placeholder. Pode ser muito cru visualmente, mas precisa ser jogavel do inicio ao fim sem crashes. Criterio para avançar: todas as mecanicas basicas estao implementadas e o jogo e completavel em 7 dias de dev. NAO inclui arte final, audio final, UI polida, balanceamento, conteudo completo, bosses elaborados ou sistemas secundarios completos.
-- prototype/prototipo: valida a DIVERSAO do jogo. Pergunta: isso e divertido? Media de 5 meses, podendo ser mais. Deve conter apenas as mecanicas que sustentam o loop de gameplay — o que faz o jogo ser divertido de jogar, com algo visualmente interessante. NAO inclui infraestrutura de producao que vai alem do necessario para sustentar o loop: sem save/load, sem troca de fases/cenas, sem coleta de itens generica, sem inventario, sem menus completos, sem economia, sem sistemas secundarios. Criterio: um jogador joga e se diverte, entende o que o jogo e, quer continuar. NAO inclui: save/load, troca de fases, coleta de itens, inventario, economia, UI final, todos os bosses, todos os biomas, sistemas de progressao completos.
-- Arte no prototipo: incluir direcao visual jogavel minima alem de concept art — style guide, paleta, shape language, assets temporarios, placeholder visual, blockout de cenario, UI temporaria e VFX simples para o loop testavel.
-- demo: build publica para vender o jogo ao publico. Pergunta: alguem quer jogar isso? Deve conter o diferencial do jogo em um core loop redondo e fechado: caminho/arena jogavel, um personagem ou ponto de interacao quando relevante, uma luta/desafio principal, inicio-meio-fim claro, feedback visual/sonoro suficiente e estabilidade para evento/Steam Next Fest. Duracao ideal: 10 a 30 minutos.
-- vertical_slice: fatia real e polida do jogo com qualidade de lancamento. Pergunta: consigo terminar esse jogo nesse nivel de qualidade? Deve conter arte final, UI final, audio final, efeitos finais, normalmente uma fase, um chefe, uma missao — e tambem a infraestrutura necessaria para o jogo funcionar como sistema: save/load, troca de fases/cenas, fluxo de menus, coleta de itens se relevante. O jogador precisa conseguir jogar do inicio ao fim desse slice como se fosse o jogo real. Suficiente para entender o que o jogo e apenas jogando essa parte. NAO e jogo inteiro.
-- alpha: jogo completo em termos de sistemas e conteudo principal jogavel internamente. Todas as mecanicas, todos os sistemas, todas as areas — ainda com arte/audio/polish incompletos e bugs conhecidos. Nao entram novas mecanicas a partir daqui.
-- beta: conteudo completo, foco em balanceamento, QA externo, performance, usabilidade, localizacao e correcoes. Nao adicionar escopo novo relevante.
-- gold: candidate/master de lancamento, certificacao/submissao, zero bugs criticos, otimizacao final e checklist de plataforma.
-- release/lancamento: publicacao, loja, comunicacao, monitoramento, hotfixes e suporte pos-lancamento.`;
+    return `CONTRATO DAS FASES DO ROADMAP (válido para qualquer gênero):
+
+POC (7 dias exatos):
+  PERGUNTA: "Consigo fazer esse jogo?"
+  REGRA DE OURO: o jogador executa a ação principal → algo reage → existe condição de fim (vitória/derrota/próxima fase).
+  Exemplos por gênero:
+    boss rush: player ataca → boss recebe dano → boss atira de volta → player morre ou vence
+    plataformer: player pula → colisão com plataforma → obstáculo ou buraco mata → checkpoint ou game over
+    puzzle: player move peças → condição de vitória detectada → nível termina
+    RPG: player ataca → inimigo reage → HP zera → combate termina
+    horror/stealth: player se move → inimigo detecta → player é capturado ou escapa
+    estratégia: player posiciona unidade → unidade ataca → recurso diminui → condição de vitória/derrota
+  OBRIGATÓRIO: loop completo de ponta a ponta (ação → reação → resultado), mesmo que cru.
+  PROIBIDO: arte final, áudio final, UI polida, save/load, menus, balanceamento, conteúdo além do mínimo.
+
+PROTOTYPE (≈ 3-6 meses):
+  PERGUNTA: "Isso é divertido?"
+  Valida o loop de diversão. Assuma que a PoC existe.
+  OBRIGATÓRIO: o principal desafio/antagonista/obstáculo do jogo com comportamento real (não placeholder de input),
+    arte de ambiente/cenário jogável (blockout ou placeholder — mas o jogador precisa de contexto visual),
+    game loop completo (morte/reinício ou equivalente), HUD mínimo funcional.
+  Por gênero — o que o Prototype DEVE ter além da PoC:
+    boss rush: state machine do boss (idle/ataque/vulnerável/morte), arena blockout, física avançada do sistema core
+    plataformer: design de nível real, inimigos com patrulha/ataque, checkpoint funcional
+    puzzle: conjunto de níveis com curva de dificuldade, sistema de dicas básico
+    RPG: primeiro dungeon completo, sistema de XP/level funcionando, diálogos básicos
+    horror: IA de perseguição/detecção, sistema de sanidade/medo, atmosfera básica
+    estratégia: IA de oponente básica, 2-3 tipos de unidades com comportamento distinto
+  PROIBIDO: save/load, troca de fases/cenas, inventário completo, menus polidos, todos os bosses/conteúdo.
+
+DEMO (≈ 2-4 meses após Prototype):
+  PERGUNTA: "Alguém quer jogar isso?"
+  Build pública com início-meio-fim claro. Diferencial visível. Estabilidade para evento/Steam Next Fest.
+  OBRIGATÓRIO: narrativa de abertura básica, caminho/sequência completa, polimento visual suficiente, áudio básico.
+  Duração ideal: 15-30 minutos de jogo.
+
+VERTICAL SLICE (≈ 3-4 meses após Demo):
+  PERGUNTA: "Consigo terminar esse jogo nesse nível de qualidade?"
+  Uma fatia polida com qualidade de lançamento + INFRAESTRUTURA completa.
+  OBRIGATÓRIO: arte final, áudio final, UI final, save/load, troca de fases/cenas, fluxo de menus completo.
+  O jogador joga do início ao fim dessa fatia como se fosse o jogo real.
+
+ALPHA (≈ 4-6 meses após VS):
+  Jogo completo internamente: todos os sistemas, todo o conteúdo principal, bugs ok.
+  Não entram mecânicas novas a partir daqui.
+
+BETA (≈ 2-3 meses após Alpha):
+  Conteúdo completo. Foco em balanceamento, QA externo, performance, localização, acessibilidade.
+  Zero escopo novo.
+
+GOLD (≈ 1-2 meses após Beta):
+  Candidato a lançamento. Certificação/submissão de plataforma. Zero bugs críticos.
+
+RELEASE:
+  Publicação, loja, comunicação, monitoramento, hotfixes, suporte pós-lançamento.`;
 }
 
 // FASE 2 (MD): Para cada sub-área, gera Markdown com Key Results
@@ -3191,23 +3278,37 @@ function scheduleRoadmap(objectives, teamConfig) {
         obj.endMonth   = Math.ceil(Math.max(...krEnds) / 4.33);
     });
 
-    // ── Pass final: garante que startMonth de cada fase > endMonth da anterior ──
-    // Necessário porque meses têm resolução menor que semanas (2 semanas = mês 1)
+    // ── Pass final: garante separação de fases no nível de meses ──
+    // Necessário porque a resolução de semanas → meses pode colapsar fases adjacentes no mesmo mês.
+    // Regra: startMonth de QUALQUER objective da fase N > endMonth de QUALQUER objective da fase N-1.
     const phaseEndMonths = {};
     for (const msType of MILESTONE_ORDER) {
         const objs = scheduled.filter(o => o.milestoneType === msType);
         if (!objs.length) continue;
+
+        // Mês mais tardio de TODAS as fases anteriores
         const prevPhaseEnd = MILESTONE_ORDER
             .slice(0, MILESTONE_ORDER.indexOf(msType))
             .reduce((max, prev) => Math.max(max, phaseEndMonths[prev] || 0), 0);
-        // Força startMonth de todos os objectives desta fase a ser > prevPhaseEnd
-        objs.forEach(obj => {
-            if (obj.startMonth <= prevPhaseEnd) {
-                const shift = prevPhaseEnd + 1 - obj.startMonth;
+
+        // Mês mais cedo de QUALQUER objective desta fase
+        const phaseMinStart = Math.min(...objs.map(o => o.startMonth));
+
+        if (phaseMinStart <= prevPhaseEnd) {
+            const shift = prevPhaseEnd + 1 - phaseMinStart;
+            // Desloca TODOS os objectives desta fase uniformemente
+            objs.forEach(obj => {
                 obj.startMonth += shift;
                 obj.endMonth   += shift;
-            }
-        });
+                // Também ajusta os KRs para manter consistência visual
+                (obj.keyResults || []).forEach(kr => {
+                    if (kr.scheduledStartWeek != null) kr.scheduledStartWeek += shift * 4;
+                    if (kr.scheduledEndWeek   != null) kr.scheduledEndWeek   += shift * 4;
+                });
+            });
+            console.warn(`[scheduleRoadmap] Fase "${msType}" deslocada +${shift} mês(es) para não sobrepor fase anterior (fim mês ${prevPhaseEnd})`);
+        }
+
         phaseEndMonths[msType] = Math.max(...objs.map(o => o.endMonth));
     }
 
