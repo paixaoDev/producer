@@ -1657,19 +1657,19 @@ async function analyzeDocument() {
         const gddNormalizado = await normalizarGDD(gddTexto, apiKey);
         store.setProgress({ gddNormalizado, gddTexto });
 
-        // FASE 0b: Lê o GDD inteiro, bloco a bloco, e monta o inventário de conteúdo concreto
+        // FASE 0b: Lê o GDD inteiro, bloco a bloco, montando o documento de features
         const gddSections = GddReader.splitSections(gddTexto);
-        const gddInventario = await extrairInventarioGDD(gddSections, gddNormalizado, apiKey,
-            (done, total) => setLoadingMessage(`Lendo o GDD em detalhe: bloco ${done}/${total}...`)
+        const documentoFeatures = await montarDocumentoFeatures(gddSections, gddNormalizado, apiKey,
+            (done, total, doc) => setLoadingMessage(`Lendo o GDD: bloco ${done}/${total} · ${GddReader.featureDocCount(doc)} features no documento...`)
         );
-        appendGenerationLog('Inventário do GDD', 'fas fa-list-check', GddReader.formatInventory(gddInventario, { maxChars: 20000 }));
+        appendGenerationLog('Documento de features', 'fas fa-list-check', GddReader.featureDocToMarkdown(documentoFeatures, gddNormalizado.titulo || 'Documento de features'));
 
         // Salva progresso após fase 0
-        store.setProgress({ gddNormalizado, gddTexto, gddInventario });
-        const gddLeitura = { sections: gddSections, inventario: gddInventario };
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures });
+        const gddLeitura = { sections: gddSections, documento: documentoFeatures };
 
         // Pausa para revisão — mostra o GDD normalizado e aguarda confirmação do usuário
-        const confirmado = await mostrarRevisaoGDD(gddNormalizado, gddInventario);
+        const confirmado = await mostrarRevisaoGDD(gddNormalizado, documentoFeatures);
         if (!confirmado) {
             store.removeProgress();
             resetToUpload();
@@ -1691,7 +1691,7 @@ async function analyzeDocument() {
         // NOVO FLUXO: Fase 1 → Milestones com entregáveis (sem tempo nas áreas)
         const phase1md = await mdPhase1_Milestones(gddCompleto(gddNormalizado), genreCtx, apiKey, gddLeitura);
 
-        store.setProgress({ gddNormalizado, gddTexto, gddInventario, phase1md });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures, phase1md });
         appendGenerationLog('Milestones e Entregáveis', 'fas fa-flag-checkered', phase1md);
 
         // Extrai lista de milestones do MD
@@ -1709,10 +1709,11 @@ async function analyzeDocument() {
             gddLeitura
         );
 
-        store.setProgress({ gddNormalizado, gddTexto, gddInventario, phase1md, phase2mds });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures, phase1md, phase2mds });
 
-        // Extrai lista plana de features com milestone de origem
-        const featureList = extractFeaturesFromMDs(phase2mds, milestoneList);
+        // Extrai lista plana de features com milestone de origem.
+        // Features do documento que nenhuma versão pegou entram no Alpha.
+        const featureList = garantirCoberturaDocumento(extractFeaturesFromMDs(phase2mds, milestoneList), documentoFeatures, milestoneList);
         setLoadingPhase(3, `Criando tasks de sprint para ${featureList.length} features...`);
 
         // NOVO FLUXO: Fase 3 → Tasks de sprint por feature (1-4 horas cada, várias por dia)
@@ -1726,20 +1727,21 @@ async function analyzeDocument() {
             gddLeitura
         );
 
-        store.setProgress({ gddNormalizado, gddTexto, gddInventario, phase1md, phase2mds, phase3mds });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures, phase1md, phase2mds, phase3mds });
 
         setLoadingPhase(4, 'Consolidando cronograma...');
 
         // Fase 4 vira uma síntese de visão geral (não precisa de chamada extra de milestones)
         const phase4md = phase1md; // milestones já foram definidos na Fase 1
 
-        store.setProgress({ gddNormalizado, gddTexto, gddInventario, phase1md, phase2mds, phase3mds, phase4md });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures, phase1md, phase2mds, phase3mds, phase4md });
 
         setLoadingPhase(5, 'Consolidando em roadmap final...');
 
         // FASE FINAL: MD → JSON (adaptado ao novo formato)
         const consolidatedMD = buildConsolidatedMD_v2(phase1md, milestoneList, featureList, phase3mds);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
+        analysisResult.documentoFeatures = documentoFeatures;
         resetWorkspaceScopeState();
 
         // Geração concluída — limpa o cache de progresso
@@ -1781,15 +1783,16 @@ async function resumeAnalysis() {
         // Reconstrói a leitura detalhada do GDD (projetos antigos não têm o texto salvo)
         const gddTexto = progress.gddTexto || '';
         const gddSections = GddReader.splitSections(gddTexto);
-        let gddInventario = progress.gddInventario;
-        if (!gddInventario && gddSections.length) {
-            setLoadingPhase(0, 'Lendo o GDD em detalhe...');
-            gddInventario = await extrairInventarioGDD(gddSections, gddNormalizado, apiKey,
-                (done, total) => setLoadingMessage(`Lendo o GDD em detalhe: bloco ${done}/${total}...`)
+        let documentoFeatures = progress.documentoFeatures;
+        if (!documentoFeatures && gddSections.length) {
+            setLoadingPhase(0, 'Lendo o GDD e montando o documento de features...');
+            documentoFeatures = await montarDocumentoFeatures(gddSections, gddNormalizado, apiKey,
+                (done, total, doc) => setLoadingMessage(`Lendo o GDD: bloco ${done}/${total} · ${GddReader.featureDocCount(doc)} features no documento...`)
             );
-            store.setProgress({ ...store.getProgress(), gddInventario });
+            store.setProgress({ ...store.getProgress(), documentoFeatures });
         }
-        const gddLeitura = { sections: gddSections, inventario: gddInventario || {} };
+        documentoFeatures = documentoFeatures || GddReader.createFeatureDoc();
+        const gddLeitura = { sections: gddSections, documento: documentoFeatures };
 
         // Detecta gênero
         const detectedGenre = detectGameGenre(
@@ -1826,7 +1829,7 @@ async function resumeAnalysis() {
         }
 
         // Reconstrói phase3mds — ou usa o salvo
-        const featureList = extractFeaturesFromMDs(phase2mds, milestoneList);
+        const featureList = garantirCoberturaDocumento(extractFeaturesFromMDs(phase2mds, milestoneList), documentoFeatures, milestoneList);
         let phase3mds = progress.phase3mds;
         if (!phase3mds) {
             setLoadingPhase(3, `Criando tasks para ${featureList.length} features...`);
@@ -1846,6 +1849,7 @@ async function resumeAnalysis() {
         setLoadingPhase(5, 'Consolidando em roadmap final...');
         const consolidatedMD = buildConsolidatedMD_v2(phase1md, milestoneList, featureList, phase3mds);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
+        analysisResult.documentoFeatures = documentoFeatures;
         resetWorkspaceScopeState();
 
         store.removeProgress();
@@ -1903,7 +1907,7 @@ const GDD_FIELD_LABELS = {
 };
 
 // Mostra a tela de revisão e retorna uma Promise que resolve com true (confirmar) ou false (cancelar)
-function mostrarRevisaoGDD(gddNormalizado, gddInventario = {}) {
+function mostrarRevisaoGDD(gddNormalizado, documentoFeatures = GddReader.createFeatureDoc()) {
     return new Promise((resolve) => {
         // Esconde loading, mostra review
         document.getElementById('loadingSection').style.display = 'none';
@@ -1939,22 +1943,28 @@ function mostrarRevisaoGDD(gddNormalizado, gddInventario = {}) {
             grid.appendChild(div);
         }
 
-        // Inventário: o que a IA encontrou de concreto no GDD (cada item vira tarefas)
-        const totalItens = GddReader.inventoryCount(gddInventario);
-        if (totalItens > 0) {
+        // Documento de features: o que a IA encontrou no GDD (cada feature vira tarefas)
+        const totalFeatures = GddReader.featureDocCount(documentoFeatures);
+        if (totalFeatures > 0) {
             const div = document.createElement('div');
             div.className = 'review-group';
             div.innerHTML = `
                 <div class="review-group-title">
-                    <i class="fas fa-list-check"></i> Conteúdo encontrado no GDD (${totalItens} itens)
+                    <i class="fas fa-list-check"></i> Documento de features (${totalFeatures})
+                    <a href="#" class="review-download-link" style="margin-left:auto;font-size:0.85em;">Baixar .md</a>
                 </div>
-                ${GddReader.INVENTORY_CATEGORIES
-                    .filter(c => (gddInventario[c.key] || []).length)
-                    .map(c => `<div class="review-item">
-                        <div class="review-item-label">${escapeHtml(c.label)} (${gddInventario[c.key].length})</div>
-                        <div class="review-item-value">${gddInventario[c.key].map(it => escapeHtml(it.name)).join(', ')}</div>
+                ${GddReader.FEATURE_CATEGORIES
+                    .map(c => ({ c, features: documentoFeatures.features.filter(f => f.category === c.key) }))
+                    .filter(g => g.features.length)
+                    .map(({ c, features }) => `<div class="review-item">
+                        <div class="review-item-label">${escapeHtml(c.label)} (${features.length})</div>
+                        <div class="review-item-value">${features.map(f => `<span title="${escapeHtml(f.summary || '')}">${escapeHtml(f.name)}</span>`).join(', ')}</div>
                     </div>`).join('')}
             `;
+            div.querySelector('.review-download-link').onclick = (e) => {
+                e.preventDefault();
+                baixarDocumentoFeatures(documentoFeatures, gddNormalizado.titulo);
+            };
             grid.appendChild(div);
         }
 
@@ -1970,7 +1980,7 @@ function mostrarRevisaoGDD(gddNormalizado, gddInventario = {}) {
     });
 }
 
-// Quanto do GDD o normalizador lê de uma vez. O restante é coberto pelo inventário (lido em blocos).
+// Quanto do GDD o normalizador lê de uma vez. O restante é coberto pelo documento de features (lido em blocos).
 const GDD_NORMALIZE_CHARS = 60000;
 
 async function normalizarGDD(gddTexto, apiKey) {
@@ -2091,63 +2101,120 @@ function sanitizarGDD(obj) {
 }
 
 // ============================================================
-// LEITURA DETALHADA DO GDD — inventário de conteúdo
-// O normalizador resume o jogo em campos curtos e perde detalhes
-// (nomes de bosses, fases, itens, telas). O inventário lê o GDD
-// inteiro em blocos e lista TUDO que é concreto, para que cada
-// item vire features e tarefas próprias nas fases seguintes.
+// DOCUMENTO DE FEATURES — leitura incremental do GDD
+// O GDD é lido bloco a bloco. A cada bloco a IA vê o índice das
+// features que já estão no documento e responde só com o que é
+// novo: features novas (## NOVA) ou complementos de features que já
+// existem (## ATUALIZA F03). O código junta tudo, então nada que foi
+// lido antes se perde. O documento não tem versão (PoC, demo...):
+// cada versão do jogo escolhe depois o que entra dela.
 // ============================================================
-async function extrairInventarioGDD(gddSections, gddNormalizado, apiKey, onProgress) {
+async function montarDocumentoFeatures(gddSections, gddNormalizado, apiKey, onProgress) {
     const chunks = GddReader.chunkSections(gddSections, GddReader.CHUNK_CHARS);
-    const categorias = GddReader.INVENTORY_CATEGORIES
-        .map(c => `## ${c.key}  (${c.label})`)
-        .join('\n');
-    const parciais = [];
+    const categorias = GddReader.FEATURE_CATEGORIES.map(c => `${c.key} (${c.label})`).join(' | ');
+    let doc = GddReader.createFeatureDoc();
 
     for (let i = 0; i < chunks.length; i++) {
-        const prompt = `Você é um produtor de jogos lendo o GDD de "${gddNormalizado?.titulo || 'um jogo'}" para planejar a produção.
-Este é o bloco ${i + 1} de ${chunks.length} do documento.
+        const titulos = (chunks[i].match(/^### .+$/gm) || []).map(t => t.slice(4)).slice(0, 6).join(', ');
+        const indice = GddReader.formatFeatureIndex(doc, { maxChars: 9000 });
+        const prompt = `Você é um produtor de jogos lendo o GDD de "${gddNormalizado?.titulo || 'um jogo'}" para montar o DOCUMENTO DE FEATURES do projeto.
+O GDD está sendo lido em partes. Esta é a parte ${i + 1} de ${chunks.length}.
 
-Liste TUDO que é concreto e precisa ser produzido, citado neste bloco. Cada item listado vai virar trabalho de programação, arte, design ou áudio.
+Uma feature é algo do jogo que precisa ser construído: uma mecânica, um sistema, um personagem, um inimigo/boss, uma fase, um item, uma tela, uma cena, uma trilha, um requisito técnico.
+O documento NÃO tem versões (PoC, demo, alpha...). Descreva a feature completa como o GDD descreve.
 
-REGRAS:
-- Use APENAS o que está escrito no bloco. Não invente.
-- Um item por linha. Não agrupe: "3 bosses: Fulano, Ciclano e Beltrano" vira 3 linhas, uma por boss.
-- Preserve os nomes próprios exatamente como estão no texto.
-- No detalhe, escreva o que precisa ser feito ou como funciona (inputs, regras, quantidades, estados, animações, variações), em até 25 palavras.
-- Se uma categoria não tiver nada neste bloco, omita a categoria.
+FEATURES QUE JÁ ESTÃO NO DOCUMENTO:
+${indice || '(nenhuma ainda — esta é a primeira parte)'}
 
-Use exatamente estes cabeçalhos de categoria:
-${categorias}
+O QUE FAZER COM ESTA PARTE DO GDD:
+- Se a parte fala de algo que JÁ está no documento, use "## ATUALIZA Fxx" e escreva só o que é NOVO (regras, números, estados, variações, conteúdo).
+- Se fala de algo que ainda não está no documento, use "## NOVA: Nome".
+- Não repita o que já está no índice. Se a parte não traz nada novo sobre uma feature, não a mencione.
+- Um boss, uma fase ou um personagem com comportamento ou arte próprios é uma feature própria. Itens simples de uma lista (ex: 12 armas parecidas) podem ser "conteudo" de uma feature.
+- Use APENAS o que está escrito. Preserve os nomes próprios exatamente.
+- Detalhes devem ser concretos: inputs, regras, números, estados, animações, condições, quantidades.
 
-Formato de cada item:
-- Nome do item :: detalhe
+FORMATO:
+## NOVA: Nome da feature
+- categoria: uma de ${categorias}
+- resumo: uma frase sobre o que é
+- detalhe: uma regra ou fato concreto (uma linha por detalhe)
+- conteudo: nome de um item/variação a produzir :: o que ele tem de específico
+- depende de: Fxx (se depende de outra feature)
 
-BLOCO DO GDD:
+## ATUALIZA F03
+- detalhe: o que esta parte acrescenta
+- conteudo: item novo :: detalhe
+
+PARTE ${i + 1} DO GDD${titulos ? ` (seções: ${titulos})` : ''}:
 ${chunks[i]}
 
-Retorne APENAS o Markdown, sem texto antes ou depois.`;
+Retorne APENAS o Markdown com as operações, sem texto antes ou depois.`;
 
         try {
             const md = await callAIAPI(prompt, apiKey);
-            parciais.push(GddReader.parseInventoryMD(md));
+            doc = GddReader.applyFeatureDocOps(doc, GddReader.parseFeatureDocOps(md), { source: titulos || `parte ${i + 1}` });
         } catch (e) {
-            console.warn(`Erro ao ler bloco ${i + 1} do GDD:`, e);
+            console.warn(`Erro ao ler a parte ${i + 1} do GDD:`, e);
         }
-        if (onProgress) onProgress(i + 1, chunks.length);
+        if (onProgress) onProgress(i + 1, chunks.length, doc);
         if (i < chunks.length - 1) await sleep(600);
     }
 
-    return GddReader.mergeInventories(parciais);
+    return doc;
 }
 
-// Contexto do GDD para uma feature: trechos originais + inventário da área
-function contextoGDDParaFeature(gddLeitura, area, consulta) {
-    if (!gddLeitura) return { trechos: '', inventario: '' };
-    return {
-        trechos: GddReader.findRelevantExcerpts(gddLeitura.sections || [], consulta, { maxChars: 3500 }),
-        inventario: GddReader.formatInventory(gddLeitura.inventario || {}, { area, maxChars: 3000 }),
-    };
+function baixarDocumentoFeatures(documentoFeatures = analysisResult?.documentoFeatures, titulo = analysisResult?.overview?.title) {
+    if (!GddReader.featureDocCount(documentoFeatures)) {
+        showNotification('Este projeto não tem documento de features. Gere o roadmap novamente para criá-lo.', 'info');
+        return;
+    }
+    const md = GddReader.featureDocToMarkdown(documentoFeatures, titulo ? `${titulo} — Documento de features` : 'Documento de features');
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(titulo || 'gdd').toLowerCase().replace(/[^a-z0-9]+/gi, '-')}-features.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Contexto para quebrar uma feature em tarefas: a especificação das features
+// do documento que ela referencia + trechos originais do GDD como apoio
+function contextoGDDParaFeature(gddLeitura, ft) {
+    if (!gddLeitura) return { especificacao: '', trechos: '' };
+    const docFeatures = gddLeitura.documento?.features || [];
+    const especificacao = (ft.refs || [])
+        .map(id => docFeatures.find(f => f.id === id))
+        .filter(Boolean)
+        .map(GddReader.formatFeatureSpec)
+        .join('\n\n');
+    const trechos = GddReader.findRelevantExcerpts(gddLeitura.sections || [], `${ft.title} ${ft.description}`,
+        { maxChars: especificacao ? 1500 : 3500 });
+    return { especificacao, trechos };
+}
+
+// Toda feature do documento precisa entrar em alguma versão. As que nenhuma
+// versão pegou entram no Alpha (a versão em que o conteúdo fica completo).
+function garantirCoberturaDocumento(featureList, documentoFeatures, milestoneList) {
+    const usadas = new Set(featureList.flatMap(ft => ft.refs || []));
+    const alvo = milestoneList.find(m => m.type === 'alpha') || milestoneList[milestoneList.length - 1];
+    if (!alvo) return featureList;
+    const extras = (documentoFeatures?.features || [])
+        .filter(f => !usadas.has(f.id))
+        .map((f, i) => ({
+            id: `ft_${alvo.type}_doc_${i}`,
+            title: f.name,
+            area: (GddReader.FEATURE_CATEGORIES.find(c => c.key === f.category)?.areas || ['programming'])[0],
+            description: f.summary || f.details[0] || '',
+            refs: [f.id],
+            milestoneId: alvo.id,
+            milestoneType: alvo.type,
+            milestoneTitle: alvo.title,
+        }));
+    return featureList.concat(extras);
 }
 
 // ============================================================
@@ -2159,7 +2226,7 @@ function contextoGDDParaFeature(gddLeitura, area, consulta) {
 // FASE 1 (v2): GDD → Milestones com entregáveis por fase
 // Sem período por área. A IA só define O QUE entra em cada fase.
 async function mdPhase1_Milestones(gddText, genreCtx, apiKey, gddLeitura = null) {
-    const inventario = gddLeitura ? GddReader.formatInventory(gddLeitura.inventario, { maxChars: 4000 }) : '';
+    const indiceFeatures = gddLeitura ? GddReader.formatFeatureIndex(gddLeitura.documento, { maxChars: 6000 }) : '';
     const prompt = `Você é um produtor de jogos sênior. Analise o GDD abaixo e defina os 8 marcos (milestones) do projeto com seus entregáveis e critérios de aceite.
 
 Gênero: ${genreCtx.label}
@@ -2193,9 +2260,10 @@ NUNCA crie uma PoC que só valida o controle/input isolado. A PoC valida o LOOP 
 
 GDD DO PROJETO:
 ${gddText}
-${inventario ? `
-CONTEÚDO CONCRETO ENCONTRADO NO GDD (use estes nomes nos entregáveis de cada marco; todo item deve caber em algum marco até o Alpha):
-${inventario}
+${indiceFeatures ? `
+DOCUMENTO DE FEATURES (tudo que o GDD pede para construir). Cada marco é uma VERSÃO do jogo: escolha quais features
+(e qual parte de cada uma) entram em cada versão. Toda feature precisa entrar em alguma versão até o Alpha:
+${indiceFeatures}
 ` : ''}
 Retorne APENAS o Markdown abaixo, sem texto antes ou depois:
 
@@ -2316,12 +2384,17 @@ function extractMilestonesFromMD(md) {
 // FASE 2 (v2): Para cada milestone → features organizadas por área (sem período)
 async function mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey, onProgress, onLog, gddLeitura = null) {
     const results = {};
-    const inventario = gddLeitura ? GddReader.formatInventory(gddLeitura.inventario, { maxChars: 6000 }) : '';
+    const docFeatures = gddLeitura?.documento?.features || [];
+    // Features do documento já planejadas em versões anteriores
+    const jaPlanejadas = new Set();
 
     for (let i = 0; i < milestoneList.length; i++) {
         const ms = milestoneList[i];
         const gddCtx = gddCompleto(gddNormalizado);
-        const trechos = gddLeitura
+        const indiceFeatures = docFeatures.length
+            ? docFeatures.map(f => `${f.id} [${f.category}] ${f.name}${f.summary ? ` — ${f.summary}` : ''}${jaPlanejadas.has(f.id) ? ' (já iniciada em versão anterior)' : ''}`).join('\n').slice(0, 9000)
+            : '';
+        const trechos = gddLeitura && !docFeatures.length
             ? GddReader.findRelevantExcerpts(gddLeitura.sections || [], `${ms.title} ${ms.whatExists.join(' ')}`, { maxChars: 4000 })
             : '';
 
@@ -2333,34 +2406,39 @@ ${roadmapPhaseContractText()}
 
 GDD DO PROJETO (resumo):
 ${gddCtx.substring(0, 8000)}
-${inventario ? `
-INVENTÁRIO DO GDD (conteúdo concreto do jogo — use os nomes reais):
-${inventario}
+${indiceFeatures ? `
+DOCUMENTO DE FEATURES DO JOGO (tudo que o GDD pede para construir — sem versão):
+${indiceFeatures}
 ` : ''}${trechos ? `
 TRECHOS ORIGINAIS DO GDD RELEVANTES PARA ESTE MARCO:
 ${trechos}
 ` : ''}
-MARCO: ${ms.title}
+VERSÃO DO JOGO (marco): ${ms.title}
 Tipo: ${ms.type}
-O que deve existir neste marco: ${ms.whatExists.join(' | ')}
+O que deve existir nesta versão: ${ms.whatExists.join(' | ')}
 Áreas envolvidas: ${ms.areas.join(', ')}
 
-Liste as features concretas que precisam ser desenvolvidas para que este marco seja atingido.
+Cada marco é uma VERSÃO jogável do jogo (PoC, protótipo, demo, vertical slice, alpha...).
+${docFeatures.length
+    ? `Escolha no documento as features que entram nesta versão e diga, para cada área, QUAL PARTE da feature é feita nesta versão.
+Cada entrega referencia a feature do documento com [ref: Fxx]. Uma mesma feature do documento pode aparecer em várias versões, cada vez com uma parte diferente
+(ex: PoC = versão crua do Dash; Vertical Slice = animação e som finais do Dash).`
+    : 'Liste as features concretas que precisam ser desenvolvidas para que esta versão exista.'}
 
 REGRAS GERAIS:
 - Use nomes reais do GDD (personagens, mecânicas, ambientes)
 - Área é apenas um label (programming, art, design, audio, qa, production) — NÃO define tempo
 - Cada feature é um objetivo verificável, independente, com UMA área só
 - Feature pequena e focada: se ela mistura sistema + conteúdo, ou programação + arte, divida em duas
-- Conteúdo do inventário NÃO é agrupado: cada boss, fase, personagem ou tela relevante para o marco vira sua própria feature
+- Conteúdo do documento NÃO é agrupado: cada boss, fase, personagem ou tela relevante para o marco vira sua própria feature
   (ex: "Boss Fulano — comportamento" [programming] e "Boss Fulano — sprite e animações" [art], em vez de "Implementar bosses")
 - Respeite estritamente o escopo do marco (não coloque no poc o que é do alpha)
-- Quantidade de features por marco (siga esses limites; use o limite de cima quando o inventário tiver muito conteúdo):
+- Quantidade de features por marco (siga esses limites; use o limite de cima quando o documento tiver muitas features):
   poc: 4-8 features (loop mínimo completo — ação + reação + condição de fim)
   prototype: 8-14 features (loop de diversão + principal antagonista/desafio real + arte de ambiente + HUD)
   demo: 6-12 features (sequência início-meio-fim, polimento suficiente para evento)
   vertical_slice: 8-14 features (infraestrutura: save/load, menus, qualidade de lançamento)
-  alpha: 10-24 features (todos os sistemas, todo o conteúdo principal completo — um item do inventário por feature)
+  alpha: 10-24 features (todos os sistemas, todo o conteúdo principal completo — toda feature do documento que ainda não foi iniciada entra aqui)
   beta: 6-10 features (balanceamento, QA, localização, performance)
   gold: 4-8 features (certificação, build master, zero bugs críticos)
   release: 4-8 features (publicação, loja, monitoramento)
@@ -2407,14 +2485,15 @@ ${ms.type === 'release' ? `RELEASE (publicação e suporte):
 Retorne APENAS o Markdown:
 
 ## ${ms.title}
-### [area: programming] Feature 1: [nome concreto]
-- Descrição: [o que é, o que entrega, como verificar — cite as regras/números do GDD]
+### [area: programming] [ref: F01] Feature 1: [nome concreto — a parte da feature feita nesta versão]
+- Descrição: [o que entrega nesta versão, como verificar — cite as regras/números do documento]
 
-### [area: art] Feature 2: [nome concreto]
-- Descrição: [o que é, o que entrega, como verificar — cite as regras/números do GDD]`;
+### [area: art] [ref: F01, F04] Feature 2: [nome concreto]
+- Descrição: [o que entrega nesta versão, como verificar — cite as regras/números do documento]`;
 
         try {
             results[ms.id] = await callAIAPI(prompt, apiKey);
+            (results[ms.id].match(/\[ref:[^\]]+\]/gi) || []).forEach(r => GddReader.findFeatureRefs(r).forEach(id => jaPlanejadas.add(id)));
         } catch (e) {
             console.warn(`Erro features ${ms.title}:`, e);
             results[ms.id] = `## ${ms.title}\n### [area: programming] Feature: [erro]\n- Descrição: Erro ao gerar features para este marco.`;
@@ -2442,8 +2521,10 @@ function extractFeaturesFromMDs(phase2mds, milestoneList) {
 
             const header = lines[0];
             const areaMatch = header.match(/\[area:\s*([^\]]+)\]/i);
+            const refs = GddReader.findFeatureRefs(header);
             const titleMatch = header
                 .replace(/\[area:[^\]]+\]\s*:?\s*/i, '')
+                .replace(/\[ref:[^\]]+\]\s*:?\s*/i, '')
                 .replace(/^Feature\s+\d+:\s*/i, '')
                 .replace(/^:\s*/, '')
                 .trim();
@@ -2455,6 +2536,7 @@ function extractFeaturesFromMDs(phase2mds, milestoneList) {
                 title: titleMatch,
                 area: areaMatch ? areaMatch[1].trim().toLowerCase() : 'programming',
                 description: desc,
+                refs,
                 milestoneId: ms.id,
                 milestoneType: ms.type,
                 milestoneTitle: ms.title,
@@ -2483,24 +2565,24 @@ async function mdPhase3_Tasks(featureList, genreCtx, gddNormalizado, apiKey, onP
         }
 
         const gddCtx = gddSecoesPorArea(gddNormalizado, ft.area);
-        const { trechos, inventario } = contextoGDDParaFeature(gddLeitura, ft.area, `${ft.title} ${ft.description}`);
+        const { especificacao, trechos } = contextoGDDParaFeature(gddLeitura, ft);
         const prompt = `Você é um produtor de jogos sênior, área ${ft.area}, projeto ${gddNormalizado.titulo || 'jogo'}.
 
 ${roadmapPhaseContractText()}
 
 GDD relevante para ${ft.area}:
 ${gddCtx}
-${trechos ? `
-TRECHOS ORIGINAIS DO GDD SOBRE ESTA FEATURE (fonte principal — use as regras, nomes e números daqui):
+${especificacao ? `
+ESPECIFICAÇÃO DA FEATURE NO DOCUMENTO DE FEATURES (fonte principal — tudo que foi encontrado no GDD sobre ela):
+${especificacao}
+` : ''}${trechos ? `
+TRECHOS ORIGINAIS DO GDD (apoio):
 ${trechos}
-` : ''}${inventario ? `
-INVENTÁRIO DO GDD PARA ${ft.area.toUpperCase()}:
-${inventario}
 ` : ''}
 ${sprintExamples}
 
-FEATURE: ${ft.title}
-Marco: ${ft.milestoneTitle} (${ft.milestoneType})
+ENTREGA: ${ft.title}
+Versão do jogo: ${ft.milestoneTitle} (${ft.milestoneType}) — quebre apenas a parte que pertence a esta versão
 Descrição: ${ft.description}
 
 Quebre essa feature em tarefas PEQUENAS, que uma pessoa termina em 1 a ${GddReader.MAX_TASK_HOURS} horas. A ideia é a pessoa conseguir fechar várias tarefas no mesmo dia.
@@ -5756,6 +5838,7 @@ function exportResults() {
         overview: analysisResult.overview,
         milestones: analysisResult.milestones || [],
         editalSummary: analysisResult.editalSummary || null,
+        ...(analysisResult.documentoFeatures ? { documentoFeatures: analysisResult.documentoFeatures } : {}),
         costSummary,
         hourlyRates: { ...hourlyRates },
         hoursPerEstimatedDay: HOURS_PER_ESTIMATED_DAY,
@@ -7008,6 +7091,7 @@ function normalizeExportToAnalysis(exportJson) {
         totalDurationMonths: meta.totalMonths || 12,
         milestones: exportJson.milestones || [],
         editalSummary: exportJson.editalSummary || null,
+        ...(exportJson.documentoFeatures ? { documentoFeatures: exportJson.documentoFeatures } : {}),
         costSummary: exportJson.costSummary || null,
         objectives: (exportJson.objectives || []).map(obj => ({
             id: obj.id || ('obj_' + Math.random().toString(36).slice(2)),

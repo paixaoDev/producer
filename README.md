@@ -62,10 +62,10 @@ Clique em **Analisar GDD**. A IA passa por 5 fases de processamento, mostradas n
 | Fase | O que acontece |
 |------|----------------|
 | Normalizando GDD | A IA lê o documento e preenche um template estruturado com as informações gerais do jogo |
-| Leitura detalhada | O GDD inteiro é lido em blocos de ~12.000 caracteres e a IA monta um **inventário** de tudo que é concreto: mecânicas, sistemas, personagens, inimigos/bosses, fases, itens, telas, cenas e áudio — um item por linha, com os nomes reais |
-| Milestones | A IA define os 8 marcos (PoC → Lançamento) usando o inventário |
-| Features | Para cada marco, a IA cria features pequenas, com uma área cada; cada item do inventário vira a sua própria feature |
-| Tarefas | Para cada feature, a IA recebe os **trechos originais do GDD** sobre ela e cria de 5 a 20 tarefas de **1 a 4 horas**, cada uma com um critério "pronto quando". Se vierem tarefas maiores que 4h ou poucas tarefas, uma segunda passada quebra as grandes |
+| Documento de features | O GDD inteiro é lido em blocos de ~12.000 caracteres. A cada bloco a IA vê o índice das features que já estão no documento e responde só com o que é novo: **features novas** ou **complementos** de features existentes (regras, números, estados, conteúdo). O código junta tudo, então nada lido antes se perde. O documento não tem versão e pode ser baixado em .md na revisão ou em Ações |
+| Versões (marcos) | A IA define as 8 versões do jogo (PoC → Lançamento) a partir do documento |
+| Entregas por versão | Para cada versão, a IA escolhe as features do documento que entram nela e qual parte de cada uma (`[ref: F03]`). Features que nenhuma versão pegou entram no Alpha automaticamente |
+| Tarefas | Cada entrega é quebrada a partir da **especificação completa** da feature no documento em 5 a 20 tarefas de **1 a 4 horas**, com critério "pronto quando". Tarefas maiores que 4h ou poucas tarefas disparam uma segunda passada que quebra as grandes |
 
 Durante o processamento, um painel ao vivo mostra o que a IA está gerando em tempo real.
 

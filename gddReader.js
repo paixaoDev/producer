@@ -6,14 +6,16 @@
 //   1. extractDocxText()  → texto do DOCX preservando títulos (# Heading)
 //   2. splitSections()    → GDD em seções { title, body }
 //   3. chunkSections()    → blocos de ~12k chars para a IA ler o GDD inteiro
-//   4. parseInventoryMD() / mergeInventories() → inventário de conteúdo concreto
+//   4. parseFeatureDocOps() / applyFeatureDocOps() → documento de features,
+//      montado bloco a bloco: cada bloco cria features novas ou complementa
+//      as que já existem no documento
 //   5. findRelevantExcerpts() → trechos ORIGINAIS do GDD para cada feature
 //   6. parseTaskLine() / analyzeTaskGranularity() → tarefas em horas, pequenas
 // ============================================================
 (function (root) {
     // Tamanho máximo de GDD lido (o restante é ignorado com aviso)
     const MAX_GDD_CHARS = 120000;
-    // Tamanho de cada bloco enviado à IA na extração do inventário
+    // Tamanho de cada bloco do GDD enviado à IA ao montar o documento de features
     const CHUNK_CHARS = 12000;
     // Tarefas maiores que isso são quebradas (várias tarefas por dia)
     const MAX_TASK_HOURS = 4;
@@ -31,14 +33,14 @@
         release:        { min: 5,  max: 10 },
     };
 
-    // Categorias do inventário de conteúdo (o que existe de concreto no GDD)
-    const INVENTORY_CATEGORIES = [
-        { key: 'mecanicas',  label: 'Mecânicas e ações do jogador', areas: ['programming', 'design'] },
-        { key: 'sistemas',   label: 'Sistemas (progressão, economia, save, IA...)', areas: ['programming', 'design'] },
-        { key: 'personagens', label: 'Personagens e NPCs', areas: ['art', 'design', 'audio'] },
-        { key: 'inimigos',   label: 'Inimigos e bosses', areas: ['programming', 'art', 'design', 'audio'] },
-        { key: 'fases',      label: 'Fases, níveis, mapas e ambientes', areas: ['design', 'art', 'audio'] },
-        { key: 'itens',      label: 'Itens, armas, power-ups e coletáveis', areas: ['design', 'art', 'programming'] },
+    // Categorias das features do documento. areas = quem costuma trabalhar nelas.
+    const FEATURE_CATEGORIES = [
+        { key: 'mecanica',   label: 'Mecânicas e ações do jogador', areas: ['programming', 'design'] },
+        { key: 'sistema',    label: 'Sistemas (progressão, economia, save, IA...)', areas: ['programming', 'design'] },
+        { key: 'personagem', label: 'Personagens e NPCs', areas: ['art', 'design', 'audio'] },
+        { key: 'inimigo',    label: 'Inimigos e bosses', areas: ['programming', 'art', 'design', 'audio'] },
+        { key: 'fase',       label: 'Fases, níveis, mapas e ambientes', areas: ['design', 'art', 'audio'] },
+        { key: 'item',       label: 'Itens, armas, power-ups e coletáveis', areas: ['design', 'art', 'programming'] },
         { key: 'interface',  label: 'Telas, menus e HUD', areas: ['programming', 'art', 'design'] },
         { key: 'narrativa',  label: 'Cenas, diálogos, finais e eventos de história', areas: ['design', 'art', 'audio'] },
         { key: 'audio',      label: 'Músicas, SFX e vozes', areas: ['audio'] },
@@ -189,73 +191,185 @@
             .join('\n\n');
     }
 
-    // ---------------- Inventário de conteúdo ----------------
+    // ---------------- Documento de features ----------------
+    // O documento é montado lendo o GDD bloco a bloco. A cada bloco a IA devolve
+    // operações em Markdown:
+    //   ## NOVA: Nome da feature          → cria uma feature
+    //   ## ATUALIZA F03                    → complementa a feature F03
+    //   - categoria: / - resumo: / - detalhe: / - conteudo: nome :: detalhe / - depende de: F01
+    // O código aplica as operações; assim a IA nunca reescreve (nem perde) o que já foi lido.
 
-    function categoryForHeading(heading) {
-        const h = normalizeText(heading).replace(/[^a-z_]/g, '');
-        return INVENTORY_CATEGORIES.find(c => h.startsWith(c.key) || (h.length >= 4 && c.key.startsWith(h)))?.key || null;
+    function nameKey(str) {
+        return normalizeText(str).replace(/[^a-z0-9]/g, '');
     }
 
-    // Lê o Markdown do inventário: "## categoria" + "- Nome :: detalhe"
-    function parseInventoryMD(md) {
-        const inventory = {};
-        let category = null;
-        for (const line of String(md || '').split('\n')) {
-            const head = line.match(/^#{1,3}\s+(.+)$/);
-            if (head) {
-                category = categoryForHeading(head[1]);
+    function normalizeCategory(str) {
+        const h = nameKey(str);
+        if (!h) return 'mecanica';
+        const found = FEATURE_CATEGORIES.find(c => h.startsWith(c.key) || (h.length >= 4 && c.key.startsWith(h)));
+        if (found) return found.key;
+        if (/boss|inimig|enem/.test(h)) return 'inimigo';
+        if (/nivel|level|mapa|ambiente|bioma|mundo/.test(h)) return 'fase';
+        if (/menu|hud|tela|ui/.test(h)) return 'interface';
+        if (/som|music|sfx|trilha/.test(h)) return 'audio';
+        if (/arma|power|colet/.test(h)) return 'item';
+        if (/npc/.test(h)) return 'personagem';
+        if (/hist|dialog|final|cena/.test(h)) return 'narrativa';
+        return 'mecanica';
+    }
+
+    function createFeatureDoc() {
+        return { features: [] };
+    }
+
+    function parseFeatureDocOps(md) {
+        const ops = [];
+        let current = null;
+        for (const raw of String(md || '').split('\n')) {
+            const line = raw.trim();
+            const novo = line.match(/^#{1,4}\s*NOVA\s*[:\-—]?\s*(.+)$/i);
+            const upd = line.match(/^#{1,4}\s*(?:ATUALIZA|ADICIONA|COMPLEMENTA)\w*\s*[:\-—]?\s*(F\d+)\b\s*[:\-—]?\s*(.*)$/i);
+            if (novo || upd) {
+                current = novo
+                    ? { op: 'new', name: novo[1].replace(/\*\*/g, '').trim(), details: [], content: [], dependsOn: [] }
+                    : { op: 'update', id: upd[1].toUpperCase(), name: upd[2].replace(/\*\*/g, '').trim(), details: [], content: [], dependsOn: [] };
+                ops.push(current);
                 continue;
             }
-            const item = line.match(/^\s*[-*•]\s+(.+)$/);
-            if (!item || !category) continue;
-            const [rawName, ...rest] = item[1].split('::');
-            const name = rawName.replace(/\*\*/g, '').trim();
-            if (!name || /^(nenhum|n[aã]o especificado|n\/a|-)$/i.test(name)) continue;
-            if (!inventory[category]) inventory[category] = [];
-            inventory[category].push({ name, detail: rest.join('::').trim() });
+            if (!current) continue;
+            const item = line.match(/^[-*•]\s+(.+)$/);
+            if (!item) continue;
+            const field = item[1].match(/^\**([a-zçãõáéíóúê ]+?)\**\s*:\s*(.+)$/i);
+            const key = field ? nameKey(field[1]) : '';
+            const value = field ? field[2].trim() : item[1].trim();
+            if (key === 'categoria') current.category = normalizeCategory(value);
+            else if (key === 'resumo') current.summary = value;
+            else if (key === 'conteudo') {
+                const [n, ...rest] = value.split('::');
+                if (n.trim()) current.content.push({ name: n.replace(/\*\*/g, '').trim(), detail: rest.join('::').trim() });
+            } else if (key === 'dependede' || key === 'dependencias' || key === 'depende') {
+                current.dependsOn.push(...value.split(/[,;]/).map(v => v.trim()).filter(Boolean));
+            } else if (key === 'detalhe' || key === 'regra' || !field) {
+                current.details.push(value);
+            } else {
+                current.details.push(`${field[1].trim()}: ${value}`);
+            }
         }
-        return inventory;
+        return ops;
     }
 
-    // Junta inventários de vários blocos, sem duplicar nomes
-    function mergeInventories(list) {
-        const merged = {};
-        for (const inv of list || []) {
-            for (const [cat, items] of Object.entries(inv || {})) {
-                if (!merged[cat]) merged[cat] = [];
-                for (const it of items) {
-                    const key = normalizeText(it.name).replace(/[^a-z0-9]/g, '');
-                    const existing = merged[cat].find(x => normalizeText(x.name).replace(/[^a-z0-9]/g, '') === key);
-                    if (!existing) {
-                        merged[cat].push({ ...it });
-                    } else if (it.detail && !existing.detail.includes(it.detail)) {
-                        existing.detail = existing.detail ? `${existing.detail}; ${it.detail}` : it.detail;
-                    }
+    function pushUnique(list, value, keyOf = nameKey) {
+        if (!value) return;
+        const k = keyOf(value);
+        if (k && !list.some(x => keyOf(x) === k)) list.push(value);
+    }
+
+    // Aplica as operações de um bloco ao documento (retorna um documento novo)
+    function applyFeatureDocOps(doc, ops, { source = '' } = {}) {
+        const out = { features: (doc?.features || []).map(f => ({
+            ...f,
+            details: [...f.details],
+            content: f.content.map(c => ({ ...c })),
+            dependsOn: [...f.dependsOn],
+            sources: [...f.sources],
+        })) };
+        const byId = id => out.features.find(f => f.id === id);
+        const byName = name => out.features.find(f => nameKey(f.name) === nameKey(name));
+        let next = out.features.reduce((m, f) => Math.max(m, parseInt(f.id.slice(1), 10) || 0), 0);
+
+        for (const op of ops || []) {
+            let feature = op.op === 'update' ? (byId(op.id) || (op.name && byName(op.name))) : byName(op.name);
+            if (!feature) {
+                if (!op.name) continue; // atualização de uma feature que não existe e sem nome
+                next++;
+                feature = {
+                    id: `F${String(next).padStart(2, '0')}`,
+                    name: op.name,
+                    category: op.category || 'mecanica',
+                    summary: '',
+                    details: [],
+                    content: [],
+                    dependsOn: [],
+                    sources: [],
+                };
+                out.features.push(feature);
+            }
+            if (op.summary) feature.summary = op.summary;
+            op.details.forEach(d => pushUnique(feature.details, d));
+            for (const c of op.content) {
+                const existing = feature.content.find(x => nameKey(x.name) === nameKey(c.name));
+                if (!existing) feature.content.push({ ...c });
+                else if (c.detail && !existing.detail.includes(c.detail)) {
+                    existing.detail = existing.detail ? `${existing.detail}; ${c.detail}` : c.detail;
                 }
             }
+            op.dependsOn.forEach(d => pushUnique(feature.dependsOn, d));
+            pushUnique(feature.sources, source);
         }
-        return merged;
+
+        // Dependências por nome viram IDs quando possível
+        for (const f of out.features) {
+            f.dependsOn = f.dependsOn
+                .map(d => (/^F\d+$/i.test(d) ? d.toUpperCase() : (byName(d)?.id || d)))
+                .filter((d, i, arr) => d !== f.id && arr.indexOf(d) === i);
+        }
+        return out;
     }
 
-    function inventoryCount(inv) {
-        return Object.values(inv || {}).reduce((s, items) => s + items.length, 0);
+    function featureDocCount(doc) {
+        return (doc?.features || []).length;
     }
 
-    // Formata o inventário para o prompt. area filtra categorias relevantes.
-    function formatInventory(inv, { area = null, maxChars = 6000 } = {}) {
-        const cats = INVENTORY_CATEGORIES.filter(c => !area || c.areas.includes(area));
+    function categoryLabel(key) {
+        return FEATURE_CATEGORIES.find(c => c.key === key)?.label || key;
+    }
+
+    // Índice curto (uma linha por feature) — vai em todo prompt para a IA saber o que já existe
+    function formatFeatureIndex(doc, { maxChars = 8000, area = null } = {}) {
+        const cats = new Set(FEATURE_CATEGORIES.filter(c => !area || c.areas.includes(area)).map(c => c.key));
         let out = '';
-        for (const c of cats) {
-            const items = inv?.[c.key] || [];
-            if (!items.length) continue;
-            const block = `${c.label}:\n${items.map(it => `- ${it.name}${it.detail ? ` — ${it.detail}` : ''}`).join('\n')}\n\n`;
-            if (out.length + block.length > maxChars) {
-                out += `${c.label}: ${items.map(it => it.name).join(', ')}\n\n`;
+        for (const f of doc?.features || []) {
+            if (area && !cats.has(f.category)) continue;
+            const line = `${f.id} [${f.category}] ${f.name}${f.summary ? ` — ${f.summary}` : ''}\n`;
+            if (out.length + line.length > maxChars) {
+                out += `${f.id} ${f.name}\n`;
+                if (out.length > maxChars) break;
             } else {
-                out += block;
+                out += line;
             }
         }
-        return out.slice(0, maxChars).trim();
+        return out.trim();
+    }
+
+    // Especificação completa de uma feature — base para quebrar em tarefas
+    function formatFeatureSpec(feature) {
+        if (!feature) return '';
+        const lines = [`### ${feature.id} — ${feature.name} (${categoryLabel(feature.category)})`];
+        if (feature.summary) lines.push(feature.summary);
+        if (feature.details.length) lines.push('Regras e detalhes:', ...feature.details.map(d => `- ${d}`));
+        if (feature.content.length) lines.push('Conteúdo a produzir:', ...feature.content.map(c => `- ${c.name}${c.detail ? ` — ${c.detail}` : ''}`));
+        if (feature.dependsOn.length) lines.push(`Depende de: ${feature.dependsOn.join(', ')}`);
+        if (feature.sources.length) lines.push(`Seções do GDD: ${feature.sources.join('; ')}`);
+        return lines.join('\n');
+    }
+
+    // Documento completo em Markdown, agrupado por categoria (para revisar ou baixar)
+    function featureDocToMarkdown(doc, title = 'Documento de features') {
+        const parts = [`# ${title}`, '', `${featureDocCount(doc)} features encontradas no GDD.`];
+        for (const c of FEATURE_CATEGORIES) {
+            const features = (doc?.features || []).filter(f => f.category === c.key);
+            if (!features.length) continue;
+            parts.push('', `## ${c.label}`, '');
+            features.forEach(f => parts.push(formatFeatureSpec(f), ''));
+        }
+        return parts.join('\n').trim() + '\n';
+    }
+
+    // "[ref: F01, F03]" → ['F01', 'F03']
+    function findFeatureRefs(text) {
+        const m = String(text || '').match(/\[ref:\s*([^\]]+)\]/i);
+        if (!m) return [];
+        return Array.from(new Set((m[1].match(/F\d+/gi) || []).map(r => r.toUpperCase())));
     }
 
     // ---------------- Tarefas ----------------
@@ -403,16 +517,21 @@
         MAX_TASK_HOURS,
         HOURS_PER_DAY,
         TASK_TARGETS,
-        INVENTORY_CATEGORIES,
+        FEATURE_CATEGORIES,
         normalizeText,
         tokenize,
         splitSections,
         chunkSections,
         findRelevantExcerpts,
-        parseInventoryMD,
-        mergeInventories,
-        inventoryCount,
-        formatInventory,
+        normalizeCategory,
+        createFeatureDoc,
+        parseFeatureDocOps,
+        applyFeatureDocOps,
+        featureDocCount,
+        formatFeatureIndex,
+        formatFeatureSpec,
+        featureDocToMarkdown,
+        findFeatureRefs,
         parseTaskLine,
         parseTaskLines,
         analyzeTaskGranularity,

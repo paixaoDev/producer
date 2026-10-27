@@ -46,27 +46,65 @@ assert.match(excerpt, /### Bosses/);
 assert.doesNotMatch(excerpt, /Chiptune/);
 assert.equal(R.findRelevantExcerpts(sections, 'de para com'), '', 'stopwords only should return nothing');
 
-// ---------- inventory ----------
-const inv1 = R.parseInventoryMD(`## inimigos
-- Jacaré Rei :: 3 fases
-- Garça Sombria :: mergulho
-## fases
-- Pântano :: arena do Jacaré
-## audio
-- nenhum`);
-const inv2 = R.parseInventoryMD(`## Inimigos (Inimigos e bosses)
-- **Jacare rei** :: onda de água
-## interface
-- HUD de vida :: barra do boss`);
-assert.equal(inv1.inimigos.length, 2);
-assert.equal(inv1.audio, undefined, '"nenhum" should be ignored');
-const merged = R.mergeInventories([inv1, inv2]);
-assert.equal(merged.inimigos.length, 2, 'same name with different accents/case should be merged');
-assert.match(merged.inimigos[0].detail, /3 fases; onda de água/);
-assert.equal(R.inventoryCount(merged), 4);
-const artInv = R.formatInventory(merged, { area: 'audio' });
-assert.match(artInv, /Pântano/);
-assert.doesNotMatch(artInv, /HUD de vida/, 'interface is not an audio category');
+// ---------- feature document (incremental) ----------
+let doc = R.createFeatureDoc();
+doc = R.applyFeatureDocOps(doc, R.parseFeatureDocOps(`## NOVA: Dash
+- categoria: mecânica
+- resumo: esquiva rápida
+- detalhe: 0.2s de invencibilidade
+
+## NOVA: **Jacaré Rei**
+- categoria: Boss
+- resumo: primeiro boss
+- conteudo: Fase 1 :: mordida
+- depende de: Dash
+`), { source: 'Mecânicas' });
+assert.deepEqual(doc.features.map(f => [f.id, f.name, f.category]), [['F01', 'Dash', 'mecanica'], ['F02', 'Jacaré Rei', 'inimigo']]);
+assert.deepEqual(doc.features[1].dependsOn, ['F01'], 'dependency by name becomes id');
+
+// second chunk adds to existing features and creates a new one
+const before = JSON.stringify(doc);
+const doc2 = R.applyFeatureDocOps(doc, R.parseFeatureDocOps(`## ATUALIZA F02
+- detalhe: 3 fases de combate
+- conteudo: Fase 1 :: onda de água
+- conteudo: Fase 2 :: investida
+
+## NOVA: dash
+- detalhe: cooldown 1s
+- detalhe: 0.2s de invencibilidade
+
+## ATUALIZA F99
+- detalhe: ignorado
+
+## NOVA: HUD de vida
+- categoria: interface
+- barra do boss no topo
+`), { source: 'Bosses' });
+assert.equal(JSON.stringify(doc), before, 'applying ops must not mutate the previous document');
+assert.equal(doc2.features.length, 3, 'same name is merged and an unknown id without name is ignored');
+const jacare = doc2.features.find(f => f.id === 'F02');
+assert.deepEqual(jacare.details, ['3 fases de combate']);
+assert.deepEqual(jacare.content.map(c => c.name), ['Fase 1', 'Fase 2']);
+assert.equal(jacare.content[0].detail, 'mordida; onda de água');
+assert.deepEqual(jacare.sources, ['Mecânicas', 'Bosses']);
+assert.deepEqual(doc2.features[0].details, ['0.2s de invencibilidade', 'cooldown 1s'], 'duplicate details are skipped');
+assert.equal(doc2.features[2].id, 'F03');
+assert.deepEqual(doc2.features[2].details, ['barra do boss no topo'], 'plain bullet becomes a detail');
+
+const index = R.formatFeatureIndex(doc2);
+assert.match(index, /^F01 \[mecanica\] Dash — esquiva rápida$/m);
+assert.doesNotMatch(R.formatFeatureIndex(doc2, { area: 'audio' }), /HUD/);
+const spec = R.formatFeatureSpec(jacare);
+assert.match(spec, /F02 — Jacaré Rei \(Inimigos e bosses\)/);
+assert.match(spec, /- Fase 2 — investida/);
+assert.match(spec, /Depende de: F01/);
+const fullMd = R.featureDocToMarkdown(doc2, 'Capivara Rush');
+assert.match(fullMd, /^# Capivara Rush/);
+assert.ok(fullMd.indexOf('## Mecânicas') < fullMd.indexOf('## Inimigos'), 'grouped in category order');
+assert.equal(R.featureDocCount(doc2), 3);
+
+assert.deepEqual(R.findFeatureRefs('### [area: art] [ref: F01, f3, F01] Boss'), ['F01', 'F3']);
+assert.deepEqual(R.findFeatureRefs('### [area: art] Boss'), []);
 
 // ---------- parseTaskLine ----------
 const t1 = R.parseTaskLine('- [ ] Implementar estado Ataque >> hitbox 0.3s | 2h | critical | feature | pronto quando: HP do player cai 10');
