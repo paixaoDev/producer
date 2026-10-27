@@ -509,6 +509,14 @@
                                     <i class="fas fa-download"></i>
                                     <span>Exportar roadmap</span>
                                 </button>
+                                <button class="workspace-action-btn" id="exportClaudeBtn" onclick="exportForAgent('claude')" type="button">
+                                    <i class="fas fa-terminal"></i>
+                                    <span>Exportar tarefas para Claude Code</span>
+                                </button>
+                                <button class="workspace-action-btn" id="exportCodexBtn" onclick="exportForAgent('codex')" type="button">
+                                    <i class="fas fa-code"></i>
+                                    <span>Exportar tarefas para Codex</span>
+                                </button>
                                 <button class="workspace-action-btn ai-enhance-btn" id="aiEnhanceTasksBtn" onclick="aiEnhanceTasks()" type="button">
                                     <i class="fas fa-magic"></i>
                                     <span>Melhorar tarefas com IA</span>
@@ -587,6 +595,7 @@
         }
     </script>
     <script src="workBacklogHelpers.js"></script>
+    <script src="agentExport.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
