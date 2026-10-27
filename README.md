@@ -15,7 +15,7 @@ O resultado é uma hierarquia de três níveis:
 ```
 Objetivo (Sub-área de desenvolvimento)
   └── Key Result (Entrega verificável dentro da sub-área)
-        └── Tarefa de Sprint (Ação concreta de 1-3 dias)
+        └── Tarefa (ação concreta de 1 a 4 horas — várias por dia)
 ```
 
 Essa estrutura é compatível com metodologias OKR e ágeis (Scrum/Kanban).
@@ -53,7 +53,7 @@ Arraste e solte o arquivo do GDD na área de upload, ou clique em **Escolher Arq
 - **DOCX/DOC** — extraído diretamente do XML interno
 - **TXT** — lido diretamente, sem processamento
 
-Tamanho máximo: **10MB**. Para GDDs maiores, exporte os primeiros 20.000 caracteres como TXT.
+Tamanho máximo: **10MB**. O Producer lê até 120.000 caracteres do GDD; os títulos do documento (Heading no Word, `#` no Markdown, linhas em CAIXA ALTA) são usados para dividir o GDD em seções.
 
 ### Passo 4 — Analisar o GDD
 
@@ -61,11 +61,11 @@ Clique em **Analisar GDD**. A IA passa por 5 fases de processamento, mostradas n
 
 | Fase | O que acontece |
 |------|----------------|
-| Normalizando GDD | A IA lê o documento e preenche um template estruturado com todas as informações do jogo |
-| Sub-áreas | A IA define de 12 a 22 sub-áreas de desenvolvimento específicas para o seu projeto |
-| KRs | Para cada sub-área, a IA gera de 3 a 6 Key Results verificáveis |
-| Sprints | Para cada KR, a IA gera de 3 a 7 tarefas pequenas de sprint com estimativa em dias |
-| Milestones | A IA define 7 marcos do projeto com critérios de aceite |
+| Normalizando GDD | A IA lê o documento e preenche um template estruturado com as informações gerais do jogo |
+| Leitura detalhada | O GDD inteiro é lido em blocos de ~12.000 caracteres e a IA monta um **inventário** de tudo que é concreto: mecânicas, sistemas, personagens, inimigos/bosses, fases, itens, telas, cenas e áudio — um item por linha, com os nomes reais |
+| Milestones | A IA define os 8 marcos (PoC → Lançamento) usando o inventário |
+| Features | Para cada marco, a IA cria features pequenas, com uma área cada; cada item do inventário vira a sua própria feature |
+| Tarefas | Para cada feature, a IA recebe os **trechos originais do GDD** sobre ela e cria de 5 a 20 tarefas de **1 a 4 horas**, cada uma com um critério "pronto quando". Se vierem tarefas maiores que 4h ou poucas tarefas, uma segunda passada quebra as grandes |
 
 Durante o processamento, um painel ao vivo mostra o que a IA está gerando em tempo real.
 

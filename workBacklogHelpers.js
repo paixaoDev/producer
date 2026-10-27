@@ -105,8 +105,11 @@
     }
 
     function addTaskCost(bucket, task, area, hourlyRates, hoursPerDay) {
-        const days = Number(task?.estimatedDays) > 0 ? Number(task.estimatedDays) : 2;
-        const hours = days * hoursPerDay;
+        // Tarefas novas trazem estimatedHours; as antigas só estimatedDays
+        const hours = Number(task?.estimatedHours) > 0
+            ? Number(task.estimatedHours)
+            : (Number(task?.estimatedDays) > 0 ? Number(task.estimatedDays) : 2) * hoursPerDay;
+        const days = hours / hoursPerDay;
         const rate = Number(hourlyRates?.[area]) || 0;
         bucket.tasks += 1;
         bucket.days += days;
