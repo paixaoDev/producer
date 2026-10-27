@@ -1318,7 +1318,6 @@ function initializeEventListeners() {
     removeFile.addEventListener('click', clearFile);
     analyzeBtn.addEventListener('click', analyzeDocument);
     exportBtn.addEventListener('click', exportResults);
-    document.getElementById('exportAiKitBtn')?.addEventListener('click', exportAiKit);
     newAnalysisBtn.addEventListener('click', () => {
         if (analysisResult) saveCurrentProject({ auto: true, notify: false });
         resetToUpload();
@@ -5606,19 +5605,29 @@ function exportResults() {
     showNotification('Roadmap exportado com sucesso!', 'success');
 }
 
-// Kit de IA: roadmap + CLI + skills de status e roadmap para Claude Code e Codex (ver aiKit.js)
-function exportAiKit() {
-    if (!analysisResult) return;
-    const files = AiKit.buildKitFiles(buildExportData());
-    const blob = new Blob([AiKit.buildZip(files)], { type: 'application/zip' });
+// ============================================================
+// EXPORTAÇÃO DE TAREFAS PARA AGENTES (Claude Code / Codex)
+// ============================================================
+// O zip leva as instruções da ferramenta (agentExport.js) + roadmap, CLI e skills (aiKit.js)
+function exportForAgent(target) {
+    if (!analysisResult || !window.AgentExport || !window.AiKit) return;
+    const kitFiles = AiKit.buildKitFiles(buildExportData(), { target });
+    const { files, fileName, model } = AgentExport.buildAgentExportFiles(analysisResult, target, { kitFiles });
+    if (!model.totalTasks) {
+        showNotification('Nenhuma tarefa para exportar.', 'error');
+        return;
+    }
+
+    const blob = new Blob([AgentExport.createZip(files)], { type: 'application/zip' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `kit_ia_${AiKit.slug(analysisResult.overview?.title)}.zip`;
+    a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
 
-    showNotification('Kit de IA baixado! Descompacte na raiz do repositório do jogo.', 'success');
+    const label = AgentExport.TARGETS[target]?.label || target;
+    showNotification(`${model.totalTasks} tarefas exportadas para ${label}. Descompacte na raiz do repositório do jogo.`, 'success');
 }
 
 // ============================================================

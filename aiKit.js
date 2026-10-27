@@ -2,7 +2,7 @@
 // KIT DE IA — skills para Claude Code / Codex
 // Gera os arquivos que vão junto com o projeto exportado:
 //   .producer/roadmap.json   → roadmap com o status de cada tarefa
-//   .producer/producer.js    → CLI sem dependências (status, statusline, set, add, sync)
+//   .producer/producer.js    → CLI sem dependências (status, statusline, next, show, set, add, sync)
 //   ROADMAP.md               → roadmap legível do projeto, gerado a partir do JSON
 //   .claude/skills/*         → skills para o Claude Code
 //   .agents/skills/*         → as mesmas skills para o Codex
@@ -107,16 +107,26 @@
             return '█'.repeat(filled) + '░'.repeat(w - filled);
         }
 
-        // Uma linha só, para a statusline do Claude Code / Codex
+        const STATUSLINE_LABELS = {
+            poc: 'poc', prototype: 'proto', demo: 'demo', vertical_slice: 'slice',
+            alpha: 'alpha', beta: 'beta', gold: 'gold', release: 'launch',
+        };
+
+        function statuslineLabel(stage) {
+            const type = String(stage.type || '').toLowerCase().replace(/[\s-]+/g, '_');
+            if (STATUSLINE_LABELS[type]) return STATUSLINE_LABELS[type];
+            const word = String(stage.label || stage.id).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase().split(/[^a-z0-9]+/).find(Boolean);
+            return word || String(stage.id);
+        }
+
+        // Uma linha só, para a statusline: "demo:68%  slice:33%  alpha:10%"
         function formatStatusline(roadmap, status) {
             const st = status || computeStageStatus(roadmap);
-            const title = (roadmap.metadata && roadmap.metadata.title) || (roadmap.overview && roadmap.overview.title) || 'Projeto';
-            const parts = st.stages.filter(s => s.total > 0).map(s => {
-                if (s.complete) return `✓ ${s.short}`;
-                if (s.id === st.currentId) return `▶ ${s.short} ${s.percent}% · faltam ${s.remaining} (~${s.remainingDays}d)`;
-                return `${s.short} ${s.remaining}`;
-            });
-            return [title, ...parts, `${st.total.percent}% total`].join(' │ ');
+            const parts = st.stages
+                .filter(s => s.total > 0 && s.id !== NO_STAGE)
+                .map(s => `${statuslineLabel(s)}:${s.percent}%`);
+            return parts.length ? parts.join('  ') : `total:${st.total.percent}%`;
         }
 
         // Tabela com quanto falta em cada etapa
@@ -396,9 +406,9 @@ Ao responder, mostre a tabela e diga em uma frase qual é a etapa atual (marcada
 
 ## Configurar a statusline
 
-A statusline mostra todas as etapas numa linha, por exemplo:
+A statusline mostra o percentual concluído de cada etapa numa linha, por exemplo:
 
-\`Meu Jogo │ ✓ PoC │ ▶ Protótipo 40% · faltam 18 (~22d) │ Demo 31 │ Alpha 54 │ 12% total\`
+\`demo:68%  slice:33%  alpha:10%  beta:4%  gold:0%  launch:0%\`
 
 **Claude Code:** adicione em \`.claude/settings.json\` (junte com o que já existir no arquivo, sem apagar outras chaves):
 
@@ -413,7 +423,7 @@ A statusline mostra todas as etapas numa linha, por exemplo:
 ## Regras
 
 - Nunca edite \`.producer/roadmap.json\` à mão para mudar status: use a skill \`producer-roadmap\`.
-- Se o arquivo não existir, peça para exportar o kit de IA de novo no Producer.
+- Se o arquivo não existir, peça para exportar de novo no Producer (Ações → Exportar para Claude Code / Codex).
 `;
     }
 
@@ -455,7 +465,7 @@ node .producer/producer.js sync                        # se alguém marcou caixa
 
 ## Levar para o site
 
-Para ver o progresso no site do Producer: abra o Producer, clique em **Importar** e escolha \`.producer/roadmap.json\`. O status de cada tarefa (a fazer, em andamento, feita) volta para o quadro.
+Para ver o progresso no site do Producer: abra o Producer, clique em **Importar JSON** e escolha \`.producer/roadmap.json\`. O status de cada tarefa (a fazer, em andamento, feita) volta para o quadro.
 
 ## Regras
 
@@ -464,130 +474,25 @@ Para ver o progresso no site do Producer: abra o Producer, clique em **Importar*
 `;
     }
 
-    function kitReadme(title) {
-        return `# Kit de IA do Producer — ${title}
+    const SKILL_DIRS = { claude: '.claude/skills', codex: '.agents/skills' };
 
-Descompacte este arquivo na raiz do repositório do jogo.
-
-| Arquivo | Para quê |
-|---|---|
-| \`.producer/roadmap.json\` | Roadmap com status de cada tarefa. Importe no site do Producer para ver o progresso. |
-| \`.producer/producer.js\` | CLI sem dependências (Node 16+): \`node .producer/producer.js help\` |
-| \`ROADMAP.md\` | Roadmap legível, regenerado pela CLI |
-| \`.claude/skills/\` | Skills para o Claude Code |
-| \`.agents/skills/\` | As mesmas skills para o Codex |
-
-Skills incluídas:
-
-- **producer-status** — quanto falta em cada etapa e a statusline.
-- **producer-roadmap** — marca tarefas, cria tarefas novas e mantém \`ROADMAP.md\` e \`roadmap.json\` iguais.
-
-Para ligar a statusline no Claude Code, peça: "configure a statusline do producer".
-`;
-    }
-
-    function slug(text) {
-        return String(text || 'projeto').normalize('NFD').replace(/[̀-ͯ]/g, '')
-            .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'projeto';
-    }
-
-    // Mapa { caminho: conteúdo } com todos os arquivos do kit
-    function buildKitFiles(roadmap) {
+    // Mapa { caminho: conteúdo } com os arquivos do kit. options.target: 'claude' | 'codex' (padrão: os dois)
+    function buildKitFiles(roadmap, options = {}) {
         const title = (roadmap.metadata && roadmap.metadata.title) || (roadmap.overview && roadmap.overview.title) || 'Projeto';
         const files = {
             '.producer/roadmap.json': JSON.stringify(roadmap, null, 2) + '\n',
             '.producer/producer.js': buildCliSource(),
-            '.producer/README.md': kitReadme(title),
             'ROADMAP.md': core.buildRoadmapMarkdown(roadmap),
         };
-        [['.claude/skills', 'Claude Code'], ['.agents/skills', 'Codex']].forEach(([dir]) => {
-            files[`${dir}/producer-status/SKILL.md`] = statusSkill(title);
-            files[`${dir}/producer-roadmap/SKILL.md`] = roadmapSkill(title);
+        const targets = SKILL_DIRS[options.target] ? [options.target] : Object.keys(SKILL_DIRS);
+        targets.forEach(t => {
+            files[`${SKILL_DIRS[t]}/producer-status/SKILL.md`] = statusSkill(title);
+            files[`${SKILL_DIRS[t]}/producer-roadmap/SKILL.md`] = roadmapSkill(title);
         });
         return files;
     }
 
-    // ── ZIP sem compressão (store), sem dependências ───────────
-    const CRC_TABLE = (() => {
-        const t = new Uint32Array(256);
-        for (let n = 0; n < 256; n++) {
-            let c = n;
-            for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
-            t[n] = c >>> 0;
-        }
-        return t;
-    })();
-
-    function crc32(bytes) {
-        let c = 0xFFFFFFFF;
-        for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-        return (c ^ 0xFFFFFFFF) >>> 0;
-    }
-
-    function buildZip(files) {
-        const enc = new TextEncoder();
-        const chunks = [];
-        const central = [];
-        let offset = 0;
-        const now = new Date();
-        const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
-        const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
-
-        Object.entries(files).forEach(([name, content]) => {
-            const nameBytes = enc.encode(name);
-            const data = typeof content === 'string' ? enc.encode(content) : content;
-            const crc = crc32(data);
-
-            const local = new DataView(new ArrayBuffer(30));
-            local.setUint32(0, 0x04034b50, true);
-            local.setUint16(4, 20, true);
-            local.setUint16(6, 0x0800, true); // nomes em UTF-8
-            local.setUint16(8, 0, true);
-            local.setUint16(10, dosTime, true);
-            local.setUint16(12, dosDate, true);
-            local.setUint32(14, crc, true);
-            local.setUint32(18, data.length, true);
-            local.setUint32(22, data.length, true);
-            local.setUint16(26, nameBytes.length, true);
-            local.setUint16(28, 0, true);
-            chunks.push(new Uint8Array(local.buffer), nameBytes, data);
-
-            const cd = new DataView(new ArrayBuffer(46));
-            cd.setUint32(0, 0x02014b50, true);
-            cd.setUint16(4, 0x031E, true); // feito em Unix, versão 3.0
-            cd.setUint16(6, 20, true);
-            cd.setUint16(8, 0x0800, true);
-            cd.setUint16(10, 0, true);
-            cd.setUint16(12, dosTime, true);
-            cd.setUint16(14, dosDate, true);
-            cd.setUint32(16, crc, true);
-            cd.setUint32(20, data.length, true);
-            cd.setUint32(24, data.length, true);
-            cd.setUint16(28, nameBytes.length, true);
-            cd.setUint32(38, (name.endsWith('.js') ? 0o100755 : 0o100644) << 16 >>> 0, true);
-            cd.setUint32(42, offset, true);
-            central.push(new Uint8Array(cd.buffer), nameBytes);
-
-            offset += 30 + nameBytes.length + data.length;
-        });
-
-        const centralSize = central.reduce((s, c) => s + c.length, 0);
-        const count = Object.keys(files).length;
-        const end = new DataView(new ArrayBuffer(22));
-        end.setUint32(0, 0x06054b50, true);
-        end.setUint16(8, count, true);
-        end.setUint16(10, count, true);
-        end.setUint32(12, centralSize, true);
-        end.setUint32(16, offset, true);
-
-        const all = [...chunks, ...central, new Uint8Array(end.buffer)];
-        const out = new Uint8Array(all.reduce((s, c) => s + c.length, 0));
-        let pos = 0;
-        all.forEach(c => { out.set(c, pos); pos += c.length; });
-        return out;
-    }
-
-    const api = { ...core, buildCliSource, buildKitFiles, buildZip, crc32, slug };
+    const api = { ...core, buildCliSource, buildKitFiles };
 
     if (typeof module !== 'undefined' && module.exports) {
         module.exports = api;

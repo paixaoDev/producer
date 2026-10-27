@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const AiKit = require('../aiKit');
+const { createZip } = require('../agentExport');
 
 const roadmap = {
   metadata: { title: 'Jogo Teste' },
@@ -43,7 +44,7 @@ assert.equal(status.total.done, 1);
 assert.equal(status.total.total, 5);
 
 const line = AiKit.formatStatusline(roadmap);
-assert.match(line, /^Jogo Teste │ ✓ PoC │ ▶ Protótipo 0% · faltam 2 \(~4d\) │ Demo 1 │ Sem etapa 1 │ 20% total$/);
+assert.equal(line, 'poc:100%  proto:0%  demo:0%', 'statusline simples: etapa:percentual');
 assert.ok(!line.includes('\n'), 'statusline tem uma linha só');
 
 const next = AiKit.nextTasks(roadmap, 5);
@@ -64,13 +65,17 @@ for (const p of [
   '.claude/skills/producer-status/SKILL.md', '.claude/skills/producer-roadmap/SKILL.md',
   '.agents/skills/producer-status/SKILL.md', '.agents/skills/producer-roadmap/SKILL.md',
 ]) assert.ok(files[p], `kit deve conter ${p}`);
+assert.deepEqual(Object.keys(AiKit.buildKitFiles(roadmap, { target: 'claude' })).filter(p => p.includes('skills/')),
+  ['.claude/skills/producer-status/SKILL.md', '.claude/skills/producer-roadmap/SKILL.md']);
+assert.deepEqual(Object.keys(AiKit.buildKitFiles(roadmap, { target: 'codex' })).filter(p => p.includes('skills/')),
+  ['.agents/skills/producer-status/SKILL.md', '.agents/skills/producer-roadmap/SKILL.md']);
 for (const p of Object.keys(files).filter(p => p.endsWith('SKILL.md'))) {
   assert.match(files[p], /^---\nname: producer-[a-z]+\ndescription: .+\n---\n/, `${p} tem frontmatter de skill`);
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aikit-'));
 const zipPath = path.join(tmp, 'kit.zip');
-fs.writeFileSync(zipPath, AiKit.buildZip(files));
+fs.writeFileSync(zipPath, createZip(Object.entries(files).map(([p, content]) => ({ path: p, content }))));
 let unzipped = false;
 try {
   execFileSync('unzip', ['-q', zipPath, '-d', path.join(tmp, 'repo')]);
@@ -97,7 +102,7 @@ cli('set', 't2', 't3', 'done');
 let saved = JSON.parse(fs.readFileSync(path.join(repo, '.producer/roadmap.json'), 'utf8'));
 assert.equal(AiKit.findTask(saved, 't3').task.status, 'done');
 assert.match(fs.readFileSync(path.join(repo, 'ROADMAP.md'), 'utf8'), /- \[x\] Combo de 3 golpes/, 'set regenera o ROADMAP.md');
-assert.match(cli('statusline'), /✓ Protótipo │ ▶ Demo/);
+assert.equal(cli('statusline').trim(), 'poc:100%  proto:100%  demo:0%');
 
 assert.throws(() => cli('set', 't4', 'banana'), 'status desconhecido falha');
 
@@ -118,6 +123,7 @@ const scriptSource = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'u
 assert.match(scriptSource, /status: taskStatusFor\(obj, kr, t\)/, 'export inclui status da tarefa');
 assert.match(scriptSource, /statusDataFromExport\(json\)/, 'import do export restaura o status');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-assert.match(html, /<script src="aiKit.js"><\/script>\s*<script src="script.js">/);
+assert.match(html, /<script src="aiKit.js"><\/script>[\s\S]*<script src="script.js">/);
+assert.match(scriptSource, /AiKit\.buildKitFiles\(buildExportData\(\), \{ target \}\)/, 'export para Claude/Codex inclui o kit');
 
 console.log('aiKit tests passed');
