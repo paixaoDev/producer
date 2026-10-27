@@ -4,65 +4,64 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const {
-  buildAgentTaskModel,
+  buildAgentModel,
   buildAgentExportFiles,
   createZip,
   crc32,
 } = require('../agentExport');
+const AiKit = require('../aiKit');
 
 const result = {
   overview: { title: 'Capivara Rush', description: 'Bullet hell boss rush.' },
   genreLabel: 'Ação',
   milestones: [
-    { id: 'ms_alpha', title: 'Alpha', type: 'alpha', criteria: ['Todos os bosses jogáveis'] },
-    { id: 'ms_poc', title: 'Prova de conceito', type: 'poc', criteria: ['Movimento responsivo'] },
+    { id: 'ms_alpha', title: 'Alpha', type: 'alpha', month: 9 },
+    { id: 'ms_poc', title: 'Prova de conceito', type: 'poc', month: 1 },
   ],
   objectives: [
     {
-      id: 'obj_alpha_0', title: 'Bosses', area: 'programming', milestoneId: 'ms_alpha',
+      id: 'obj_alpha_0', title: 'Bosses', area: 'programming',
       keyResults: [{ id: 'kr1', title: 'Bosses', tasks: [
-        { id: 't1', title: 'Padrão de tiro do boss 1', description: 'Espiral com 3 fases', estimatedDays: 2, priority: 'high', type: 'feature' },
+        { id: 't1', title: 'Padrão de tiro do boss 1', estimatedDays: 2, milestoneId: 'ms_alpha' },
       ] }],
     },
     {
-      id: 'obj_poc_0', title: 'Movimento', area: 'programming', milestoneId: 'ms_poc',
-      keyResults: [{ id: 'kr1', title: 'Movimento', tasks: [
-        { id: 't1', title: 'Movimento 8 direções', estimatedDays: 1, priority: 'high', type: 'feature' },
-        { id: 't2', title: 'Dash com i-frames', estimatedDays: 1, priority: 'medium', type: 'feature', milestoneId: 'ms_poc' },
+      id: 'obj_poc_0', title: 'Movimento', area: 'programming',
+      keyResults: [{ id: 'kr2', title: 'Movimento', tasks: [
+        { id: 't2', title: 'Movimento 8 direções', estimatedDays: 1, milestoneId: 'ms_poc', status: 'done' },
+        { id: 't3', title: 'Dash com i-frames', estimatedDays: 1, milestoneId: 'ms_poc' },
       ] }],
     },
   ],
 };
 
-const isCompleted = (obj, kr, task) => obj === 'obj_poc_0' && task === 't1';
-
-// Ordenação por fase do marco (poc antes de alpha) e códigos sequenciais
-const model = buildAgentTaskModel(result, isCompleted);
-assert.deepEqual(model.groups.map(g => g.milestone.id), ['ms_poc', 'ms_alpha']);
-assert.deepEqual(model.groups.flatMap(g => g.tasks.map(t => t.code)), ['T001', 'T002', 'T003']);
-assert.equal(model.groups[0].tasks[0].title, 'Movimento 8 direções');
+const model = buildAgentModel(result);
+assert.equal(model.title, 'Capivara Rush');
 assert.equal(model.totalTasks, 3);
-assert.equal(model.doneTasks, 1);
 
-// Claude Code: CLAUDE.md + comando /proxima-tarefa
-const claude = buildAgentExportFiles(result, 'claude', { isCompleted, exportDate: '2026-01-01T00:00:00.000Z' });
+// Claude Code: CLAUDE.md + comando /proxima-tarefa + kit (roadmap, CLI, skills)
+const claude = buildAgentExportFiles(result, 'claude', { kitFiles: AiKit.buildKitFiles(result, { target: 'claude' }) });
 const claudePaths = claude.files.map(f => f.path);
-assert.deepEqual(claudePaths, ['CLAUDE.md', 'producer/tarefas.md', 'producer/tarefas.json', '.claude/commands/proxima-tarefa.md']);
+assert.deepEqual(claudePaths, [
+  'CLAUDE.md', '.claude/commands/proxima-tarefa.md',
+  '.producer/roadmap.json', '.producer/producer.js', 'ROADMAP.md',
+  '.claude/skills/producer-status/SKILL.md', '.claude/skills/producer-roadmap/SKILL.md',
+]);
 assert.equal(claude.fileName, 'capivara-rush-claude.zip');
-const tasksMd = claude.files[1].content;
-assert.match(tasksMd, /- \[x\] \*\*T001\*\* Movimento 8 direções/);
-assert.match(tasksMd, /- \[ \] \*\*T003\*\* Padrão de tiro do boss 1/);
-assert.match(tasksMd, /Espiral com 3 fases/);
-assert.match(tasksMd, /Movimento responsivo/);
-const tasksJson = JSON.parse(claude.files[2].content);
-assert.equal(tasksJson.milestones[0].tasks[0].status, 'done');
-assert.equal(tasksJson.milestones[1].tasks[0].code, 'T003');
-assert.match(claude.files[3].content, /\$ARGUMENTS/);
+assert.match(claude.files[0].content, /node \.producer\/producer\.js next 5/);
+assert.match(claude.files[0].content, /\.claude\/skills\//);
+assert.match(claude.files[1].content, /\$ARGUMENTS/);
+assert.match(claude.files[1].content, /set <id> done/);
+assert.match(claude.files.find(f => f.path === 'ROADMAP.md').content, /- \[x\] Movimento 8 direções — 1d `t2`/);
 
-// Codex: AGENTS.md, sem comando do Claude
-const codex = buildAgentExportFiles(result, 'codex');
-assert.deepEqual(codex.files.map(f => f.path), ['AGENTS.md', 'producer/tarefas.md', 'producer/tarefas.json']);
+// Codex: AGENTS.md + skills em .agents/skills, sem comando do Claude
+const codex = buildAgentExportFiles(result, 'codex', { kitFiles: AiKit.buildKitFiles(result, { target: 'codex' }) });
+const codexPaths = codex.files.map(f => f.path);
+assert.equal(codexPaths[0], 'AGENTS.md');
+assert.ok(codexPaths.includes('.agents/skills/producer-status/SKILL.md'));
+assert.ok(!codexPaths.some(p => p.startsWith('.claude/')));
 assert.doesNotMatch(codex.files[0].content, /proxima-tarefa/);
+assert.match(codex.files[0].content, /\.agents\/skills\//);
 
 // CRC32 conhecido
 assert.equal(crc32(new TextEncoder().encode('123456789')), 0xCBF43926);

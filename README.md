@@ -139,16 +139,43 @@ Clique em **Exportar** para baixar o roadmap completo em JSON. O arquivo contém
 
 O JSON pode ser importado em ferramentas como Notion, Linear, Produto ou processado por scripts próprios.
 
-### Exportar tarefas para Claude Code ou Codex
+Cada tarefa exportada traz também `description` e `status` (`todo`, `doing` ou `done`). Ao importar o JSON de volta, o status volta para a lista e para o quadro.
 
-No painel **Ações** há dois botões: **Exportar tarefas para Claude Code** e **Exportar tarefas para Codex**. Cada um baixa um `.zip` para descompactar na raiz do repositório do jogo:
+### Exportar para Claude Code ou Codex
+
+No painel **Ações** há dois botões: **Exportar para Claude Code** e **Exportar para Codex**. Cada um baixa um `.zip` para descompactar na raiz do repositório do jogo:
 
 | Arquivo | Claude Code | Codex | Para quê |
 |---------|:-:|:-:|----------|
 | `CLAUDE.md` / `AGENTS.md` | ✓ | ✓ | Instruções que a ferramenta lê sozinha: onde estão as tarefas e como trabalhar nelas |
-| `producer/tarefas.md` | ✓ | ✓ | Checklist por marco, com códigos `T001`, `T002`... e o progresso já marcado na interface |
-| `producer/tarefas.json` | ✓ | ✓ | Mesmas tarefas em JSON (`status: "todo" \| "done"`) para scripts |
-| `.claude/commands/proxima-tarefa.md` | ✓ | | Comando `/proxima-tarefa [T014]` que executa a próxima tarefa pendente |
+| `ROADMAP.md` | ✓ | ✓ | Roadmap legível por etapa, com o id de cada tarefa e o progresso já marcado na interface |
+| `.producer/roadmap.json` | ✓ | ✓ | Roadmap com status de cada tarefa. Importe de volta no Producer para ver o progresso no site |
+| `.producer/producer.js` | ✓ | ✓ | CLI sem dependências (Node 16+) usada pelas skills |
+| `.claude/skills/producer-status`, `producer-roadmap` | ✓ | | Skills do Claude Code |
+| `.agents/skills/producer-status`, `producer-roadmap` | | ✓ | As mesmas skills para o Codex |
+| `.claude/commands/proxima-tarefa.md` | ✓ | | Comando `/proxima-tarefa [id]` que executa a próxima tarefa pendente |
+
+Skills incluídas:
+
+- **producer-status**: quanto falta em cada etapa e a statusline.
+- **producer-roadmap**: marca tarefas como em andamento ou feitas, cria tarefas novas e mantém `ROADMAP.md` e `.producer/roadmap.json` iguais.
+
+Comandos da CLI:
+
+| Comando | O que faz |
+|---|---|
+| `node .producer/producer.js status` | Tabela com feitas, em andamento, faltam e dias restantes por etapa |
+| `node .producer/producer.js statusline` | Uma linha para a statusline: `demo:68%  slice:33%  alpha:10%  beta:4%  gold:0%  launch:0%` |
+| `node .producer/producer.js next 5` | Próximas tarefas da etapa atual |
+| `node .producer/producer.js set <id> doing\|done\|todo` | Muda o status e regenera o `ROADMAP.md` |
+| `node .producer/producer.js add --kr <id> --title "..."` | Cria uma tarefa nova |
+| `node .producer/producer.js sync` | Aplica as caixas marcadas à mão no `ROADMAP.md` |
+
+Para a statusline do Claude Code, adicione em `.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command", "command": "node .producer/producer.js statusline" } }
+```
 
 Se o repositório já tiver um `CLAUDE.md` ou `AGENTS.md`, junte o conteúdo em vez de sobrescrever.
 
@@ -168,7 +195,8 @@ Se a geração for interrompida (queda de conexão, erro de API, fechar o navega
 producer/
 ├── index.html      # Interface completa (upload, loading, resultados)
 ├── script.js       # Toda a lógica: parsing, IA, rendering, scheduling
-├── agentExport.js  # Exportação de tarefas para Claude Code / Codex (.zip)
+├── aiKit.js        # Roadmap, CLI e skills de status/roadmap para as IAs
+├── agentExport.js  # Exportação para Claude Code / Codex (CLAUDE.md/AGENTS.md, comando, .zip)
 ├── styles.css      # CSS com variáveis, timeline, cards, filtros
 ├── LICENSE         # MIT
 └── README.md       # Este arquivo

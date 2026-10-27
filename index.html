@@ -511,11 +511,11 @@
                                 </button>
                                 <button class="workspace-action-btn" id="exportClaudeBtn" onclick="exportForAgent('claude')" type="button">
                                     <i class="fas fa-terminal"></i>
-                                    <span>Exportar tarefas para Claude Code</span>
+                                    <span>Exportar para Claude Code (tarefas + skills)</span>
                                 </button>
                                 <button class="workspace-action-btn" id="exportCodexBtn" onclick="exportForAgent('codex')" type="button">
                                     <i class="fas fa-code"></i>
-                                    <span>Exportar tarefas para Codex</span>
+                                    <span>Exportar para Codex (tarefas + skills)</span>
                                 </button>
                                 <button class="workspace-action-btn ai-enhance-btn" id="aiEnhanceTasksBtn" onclick="aiEnhanceTasks()" type="button">
                                     <i class="fas fa-magic"></i>
@@ -595,6 +595,7 @@
         }
     </script>
     <script src="workBacklogHelpers.js"></script>
+    <script src="aiKit.js"></script>
     <script src="agentExport.js"></script>
     <script src="script.js"></script>
 </body>

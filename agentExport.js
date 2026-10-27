@@ -1,25 +1,15 @@
 (function (root) {
-    // Exportação das tarefas do roadmap para agentes de código (Claude Code e Codex).
-    // Gera um .zip com as tarefas em Markdown + JSON e o arquivo de instruções
-    // que cada ferramenta lê automaticamente (CLAUDE.md ou AGENTS.md).
-
-    const PHASE_ORDER = ['poc', 'prototype', 'demo', 'vertical_slice', 'alpha', 'beta', 'gold', 'release'];
-
-    const AREA_LABELS = {
-        programming: 'Programação',
-        art: 'Arte',
-        design: 'Design',
-        audio: 'Áudio',
-        qa: 'QA',
-        production: 'Produção',
-    };
+    // Exportação para agentes de código (Claude Code e Codex).
+    // Gera um .zip com o arquivo de instruções que cada ferramenta lê sozinha
+    // (CLAUDE.md ou AGENTS.md) e, no Claude Code, o comando /proxima-tarefa.
+    // O roadmap, a CLI e as skills vêm do aiKit.js (options.kitFiles).
 
     const TARGETS = {
-        claude: { label: 'Claude Code', instructionsFile: 'CLAUDE.md' },
-        codex: { label: 'Codex', instructionsFile: 'AGENTS.md' },
+        claude: { label: 'Claude Code', instructionsFile: 'CLAUDE.md', skillsDir: '.claude/skills' },
+        codex: { label: 'Codex', instructionsFile: 'AGENTS.md', skillsDir: '.agents/skills' },
     };
 
-    const TASKS_DIR = 'producer';
+    const CLI = 'node .producer/producer.js';
 
     function oneLine(value) {
         return String(value || '').replace(/\s+/g, ' ').trim();
@@ -28,141 +18,22 @@
     function slugify(value) {
         return String(value || '')
             .normalize('NFD')
-            .replace(/[̀-ͯ]/g, '')
+            .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-+|-+$/g, '')
             .slice(0, 50) || 'projeto';
     }
 
-    function phaseIndex(type) {
-        const idx = PHASE_ORDER.indexOf(String(type || '').toLowerCase());
-        return idx === -1 ? PHASE_ORDER.length : idx;
-    }
-
-    // Achata objetivos → KRs → tarefas numa lista ordenada por marco,
-    // com códigos curtos (T001, T002...) que o agente usa para se referir às tarefas.
-    // isCompleted(objId, krId, taskId) diz se a tarefa já foi marcada na interface.
-    function buildAgentTaskModel(result, isCompleted) {
-        const done = typeof isCompleted === 'function' ? isCompleted : () => false;
-        const milestones = (result?.milestones || []).map((m, i) => ({
-            id: m.id || `ms_${m.type || i}`,
-            title: oneLine(m.title) || `Marco ${i + 1}`,
-            type: m.type || '',
-            month: m.month,
-            criteria: (m.criteria || []).map(oneLine).filter(Boolean),
-            order: i,
-        }));
-        const byId = new Map(milestones.map(m => [m.id, m]));
-        const fallback = { id: 'sem_marco', title: 'Sem marco definido', type: '', criteria: [], order: Infinity };
-
-        const groups = new Map();
-        (result?.objectives || []).forEach(obj => {
-            (obj.keyResults || []).forEach(kr => {
-                (kr.tasks || []).forEach(task => {
-                    const ms = byId.get(task.milestoneId) || byId.get(obj.milestoneId) || fallback;
-                    if (!groups.has(ms.id)) groups.set(ms.id, { milestone: ms, tasks: [] });
-                    groups.get(ms.id).tasks.push({
-                        id: task.id,
-                        title: oneLine(task.title) || 'Tarefa sem título',
-                        description: oneLine(task.description),
-                        area: obj.area || 'programming',
-                        areaLabel: AREA_LABELS[obj.area] || obj.area || 'Geral',
-                        feature: oneLine(obj.title),
-                        keyResult: oneLine(kr.title),
-                        estimatedDays: task.estimatedDays || 1,
-                        priority: task.priority || 'medium',
-                        type: task.type || 'feature',
-                        milestoneId: ms.id,
-                        done: !!done(obj.id, kr.id, task.id),
-                    });
-                });
-            });
-        });
-
-        const ordered = Array.from(groups.values()).sort((a, b) => {
-            const ma = a.milestone, mb = b.milestone;
-            if (Number.isFinite(ma.month) && Number.isFinite(mb.month) && ma.month !== mb.month) return ma.month - mb.month;
-            const pa = phaseIndex(ma.type), pb = phaseIndex(mb.type);
-            if (pa !== pb) return pa - pb;
-            return ma.order - mb.order;
-        });
-
-        let seq = 0;
-        ordered.forEach(group => group.tasks.forEach(task => {
-            seq += 1;
-            task.code = `T${String(seq).padStart(3, '0')}`;
-        }));
-
-        const tasks = ordered.flatMap(g => g.tasks);
+    function buildAgentModel(result) {
+        let totalTasks = 0;
+        (result?.objectives || []).forEach(obj => (obj.keyResults || []).forEach(kr => { totalTasks += (kr.tasks || []).length; }));
         return {
             title: oneLine(result?.overview?.title) || 'Projeto',
             genre: oneLine(result?.genreLabel || result?.overview?.genre),
             description: oneLine(result?.overview?.description),
-            groups: ordered,
-            totalTasks: tasks.length,
-            doneTasks: tasks.filter(t => t.done).length,
+            totalTasks,
         };
-    }
-
-    function taskLine(task) {
-        const meta = [task.areaLabel, `${task.estimatedDays}d`, task.priority, task.type].join(' · ');
-        let line = `- [${task.done ? 'x' : ' '}] **${task.code}** ${task.title}\n  - ${meta}\n  - Feature: ${task.feature}`;
-        if (task.keyResult && task.keyResult !== task.feature) line += ` › ${task.keyResult}`;
-        if (task.description) line += `\n  - ${task.description}`;
-        return line;
-    }
-
-    function buildTasksMarkdown(model) {
-        const out = [
-            `# Tarefas — ${model.title}`,
-            '',
-            `> Gerado pelo Producer. ${model.doneTasks}/${model.totalTasks} tarefas concluídas.`,
-            '> Marque `[x]` ao concluir uma tarefa. Mantenha o código (T001...) para rastrear o progresso.',
-            '',
-        ];
-        model.groups.forEach(group => {
-            const ms = group.milestone;
-            const done = group.tasks.filter(t => t.done).length;
-            out.push(`## ${ms.title}${ms.type ? ` (${ms.type})` : ''} — ${done}/${group.tasks.length}`, '');
-            if (ms.criteria.length) {
-                out.push('Critérios de aceite do marco:');
-                ms.criteria.forEach(c => out.push(`- ${c}`));
-                out.push('');
-            }
-            group.tasks.forEach(task => out.push(taskLine(task)));
-            out.push('');
-        });
-        return out.join('\n');
-    }
-
-    function buildTasksJSON(model, exportDate) {
-        return JSON.stringify({
-            project: model.title,
-            genre: model.genre,
-            exportDate: exportDate || new Date().toISOString(),
-            totalTasks: model.totalTasks,
-            doneTasks: model.doneTasks,
-            milestones: model.groups.map(g => ({
-                id: g.milestone.id,
-                title: g.milestone.title,
-                type: g.milestone.type,
-                criteria: g.milestone.criteria,
-                tasks: g.tasks.map(t => ({
-                    code: t.code,
-                    id: t.id,
-                    title: t.title,
-                    description: t.description,
-                    area: t.area,
-                    feature: t.feature,
-                    keyResult: t.keyResult,
-                    estimatedDays: t.estimatedDays,
-                    priority: t.priority,
-                    type: t.type,
-                    status: t.done ? 'done' : 'todo',
-                })),
-            })),
-        }, null, 2) + '\n';
     }
 
     function buildAgentInstructions(model, target) {
@@ -172,22 +43,26 @@
             '',
             model.description || `Projeto de jogo${model.genre ? ` (${model.genre})` : ''} planejado com o Producer.`,
             '',
-            '## Tarefas do projeto',
+            '## Roadmap do projeto',
             '',
-            `O backlog está em \`${TASKS_DIR}/tarefas.md\` (leitura humana) e \`${TASKS_DIR}/tarefas.json\` (leitura por script).`,
-            'As tarefas estão ordenadas por marco (PoC → protótipo → ... → lançamento) e cada uma tem um código `T001`, `T002`...',
+            '- `ROADMAP.md`: tarefas por etapa (PoC → protótipo → ... → lançamento), cada uma com seu id entre crases.',
+            '- `.producer/roadmap.json`: o mesmo roadmap com o status de cada tarefa. É o arquivo importado de volta no site do Producer.',
+            `- \`${CLI}\`: CLI que lê e altera os dois. Não edite os arquivos à mão.`,
+            '',
+            `As skills \`producer-status\` e \`producer-roadmap\` (em \`${tool.skillsDir}/\`) explicam os comandos em detalhe.`,
             '',
             '## Como trabalhar nas tarefas',
             '',
-            '1. Se nenhuma tarefa for indicada, pegue a primeira tarefa `[ ]` do marco mais cedo que ainda tem pendências.',
-            '2. Leia a descrição, a feature e os critérios de aceite do marco antes de mexer no código.',
-            '3. Faça só o escopo da tarefa. Se ela for grande demais, divida em passos e conclua um de cada vez.',
-            `4. Ao concluir, marque \`[x]\` na tarefa em \`${TASKS_DIR}/tarefas.md\` e mude o \`status\` para \`"done"\` em \`${TASKS_DIR}/tarefas.json\`.`,
-            '5. Cite o código da tarefa na mensagem de commit (ex.: `T014: implementa pulo duplo`).',
-            '6. Tarefas de arte, áudio ou design que não são código: prepare o que der (estrutura de pastas, placeholders, integração) e avise o que falta para a pessoa.',
+            `1. Se nenhuma tarefa for indicada, rode \`${CLI} next 5\` e pegue a primeira (as em andamento vêm antes).`,
+            `2. Leia a tarefa (\`${CLI} show <id>\`) e a descrição da etapa no \`ROADMAP.md\` antes de mexer no código.`,
+            `3. Marque o início com \`${CLI} set <id> doing\`.`,
+            '4. Faça só o escopo da tarefa. Se ela for grande demais, crie tarefas menores (1 a 2 dias) com `add` e faça uma de cada vez.',
+            `5. Ao concluir e verificar, rode \`${CLI} set <id> done\` e depois \`${CLI} status\` para dizer quanto falta na etapa.`,
+            '6. Cite o id da tarefa no commit e inclua `ROADMAP.md` e `.producer/roadmap.json` no mesmo commit.',
+            '7. Tarefas de arte, áudio ou design que não são código: prepare o que der (estrutura de pastas, placeholders, integração) e avise o que falta para a pessoa.',
         ];
         if (target === 'claude') {
-            lines.push('', 'Use o comando `/proxima-tarefa` para começar a próxima tarefa pendente, ou `/proxima-tarefa T014` para uma específica.');
+            lines.push('', 'Use o comando `/proxima-tarefa` para começar a próxima tarefa pendente, ou `/proxima-tarefa <id>` para uma específica.');
         }
         lines.push('', `<!-- Exportado pelo Producer para ${tool.label}. -->`, '');
         return lines.join('\n');
@@ -197,32 +72,27 @@
         return [
             '---',
             'description: Executa a próxima tarefa pendente do roadmap do Producer (ou a tarefa indicada)',
-            'argument-hint: "[código da tarefa, ex.: T014]"',
+            'argument-hint: "[id da tarefa]"',
             '---',
-            '',
-            `Leia \`${TASKS_DIR}/tarefas.md\`.`,
             '',
             'Tarefa pedida: $ARGUMENTS',
             '',
-            '- Se um código foi informado, trabalhe nessa tarefa. Senão, escolha a primeira tarefa `[ ]` do marco mais cedo com pendências.',
-            '- Diga qual tarefa vai fazer e o plano em poucas linhas antes de começar.',
-            '- Implemente só o escopo da tarefa, respeitando os critérios de aceite do marco.',
-            `- Ao terminar, marque a tarefa como concluída em \`${TASKS_DIR}/tarefas.md\` e em \`${TASKS_DIR}/tarefas.json\`, e resuma o que foi feito.`,
+            `- Se um id foi informado, trabalhe nessa tarefa (\`${CLI} show <id>\`). Senão, pegue a primeira de \`${CLI} next 5\`.`,
+            `- Diga qual tarefa vai fazer e o plano em poucas linhas, e rode \`${CLI} set <id> doing\`.`,
+            '- Implemente só o escopo da tarefa, respeitando a descrição da etapa no `ROADMAP.md`.',
+            `- Ao terminar e verificar, rode \`${CLI} set <id> done\`, depois \`${CLI} status\`, e resuma o que foi feito e quanto falta na etapa.`,
             '',
         ].join('\n');
     }
 
     function buildAgentExportFiles(result, target, options = {}) {
-        const model = buildAgentTaskModel(result, options.isCompleted);
+        const model = buildAgentModel(result);
         const tool = TARGETS[target] || TARGETS.claude;
-        const files = [
-            { path: tool.instructionsFile, content: buildAgentInstructions(model, target) },
-            { path: `${TASKS_DIR}/tarefas.md`, content: buildTasksMarkdown(model) },
-            { path: `${TASKS_DIR}/tarefas.json`, content: buildTasksJSON(model, options.exportDate) },
-        ];
+        const files = [{ path: tool.instructionsFile, content: buildAgentInstructions(model, target) }];
         if (target === 'claude') {
             files.push({ path: '.claude/commands/proxima-tarefa.md', content: buildClaudeCommand() });
         }
+        Object.entries(options.kitFiles || {}).forEach(([path, content]) => files.push({ path, content }));
         return { model, files, fileName: `${slugify(model.title)}-${target}.zip` };
     }
 
@@ -313,9 +183,7 @@
 
     const api = {
         TARGETS,
-        buildAgentTaskModel,
-        buildTasksMarkdown,
-        buildTasksJSON,
+        buildAgentModel,
         buildAgentInstructions,
         buildClaudeCommand,
         buildAgentExportFiles,
