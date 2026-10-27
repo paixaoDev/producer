@@ -139,6 +139,19 @@ Clique em **Exportar** para baixar o roadmap completo em JSON. O arquivo contém
 
 O JSON pode ser importado em ferramentas como Notion, Linear, Produto ou processado por scripts próprios.
 
+### Exportar tarefas para Claude Code ou Codex
+
+No painel **Ações** há dois botões: **Exportar tarefas para Claude Code** e **Exportar tarefas para Codex**. Cada um baixa um `.zip` para descompactar na raiz do repositório do jogo:
+
+| Arquivo | Claude Code | Codex | Para quê |
+|---------|:-:|:-:|----------|
+| `CLAUDE.md` / `AGENTS.md` | ✓ | ✓ | Instruções que a ferramenta lê sozinha: onde estão as tarefas e como trabalhar nelas |
+| `producer/tarefas.md` | ✓ | ✓ | Checklist por marco, com códigos `T001`, `T002`... e o progresso já marcado na interface |
+| `producer/tarefas.json` | ✓ | ✓ | Mesmas tarefas em JSON (`status: "todo" \| "done"`) para scripts |
+| `.claude/commands/proxima-tarefa.md` | ✓ | | Comando `/proxima-tarefa [T014]` que executa a próxima tarefa pendente |
+
+Se o repositório já tiver um `CLAUDE.md` ou `AGENTS.md`, junte o conteúdo em vez de sobrescrever.
+
 O botão **Copiar texto** na seção de Resumo para Edital copia o texto formatado diretamente para a área de transferência.
 
 ---
@@ -155,6 +168,7 @@ Se a geração for interrompida (queda de conexão, erro de API, fechar o navega
 producer/
 ├── index.html      # Interface completa (upload, loading, resultados)
 ├── script.js       # Toda a lógica: parsing, IA, rendering, scheduling
+├── agentExport.js  # Exportação de tarefas para Claude Code / Codex (.zip)
 ├── styles.css      # CSS com variáveis, timeline, cards, filtros
 ├── LICENSE         # MIT
 └── README.md       # Este arquivo

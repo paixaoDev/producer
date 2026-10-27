@@ -5590,6 +5590,33 @@ function exportResults() {
 }
 
 // ============================================================
+// EXPORTAÇÃO DE TAREFAS PARA AGENTES (Claude Code / Codex)
+// ============================================================
+function isTaskMarkedDone(objId, krId, taskId) {
+    try { return (window.localStorage || window.sessionStorage).getItem(`task_${objId}_${krId}_${taskId}`) === 'true'; } catch { return false; }
+}
+
+function exportForAgent(target) {
+    if (!analysisResult || !window.AgentExport) return;
+    const { files, fileName, model } = AgentExport.buildAgentExportFiles(analysisResult, target, { isCompleted: isTaskMarkedDone });
+    if (!model.totalTasks) {
+        showNotification('Nenhuma tarefa para exportar.', 'error');
+        return;
+    }
+
+    const blob = new Blob([AgentExport.createZip(files)], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    const label = AgentExport.TARGETS[target]?.label || target;
+    showNotification(`${model.totalTasks} tarefas exportadas para ${label}. Descompacte na raiz do repositório do jogo.`, 'success');
+}
+
+// ============================================================
 // RESET E NAVEGAÇÃO
 // ============================================================
 function resetToUpload() {
