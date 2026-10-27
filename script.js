@@ -1318,6 +1318,7 @@ function initializeEventListeners() {
     removeFile.addEventListener('click', clearFile);
     analyzeBtn.addEventListener('click', analyzeDocument);
     exportBtn.addEventListener('click', exportResults);
+    document.getElementById('exportAiKitBtn')?.addEventListener('click', exportAiKit);
     newAnalysisBtn.addEventListener('click', () => {
         if (analysisResult) saveCurrentProject({ auto: true, notify: false });
         resetToUpload();
@@ -5532,11 +5533,20 @@ function loadTaskStates() {
 // ============================================================
 // EXPORTAÇÃO JSON HIERÁRQUICA
 // ============================================================
-function exportResults() {
-    if (!analysisResult) return;
+// Status de uma tarefa como aparece no quadro: 'todo' | 'doing' | 'done'
+function taskStatusFor(obj, kr, task) {
+    const kanban = kanbanTaskStates[workTaskKey(obj.id, kr.id, task.id)] || kanbanTaskStates[task.id];
+    if (kanban === 'doing' || kanban === 'done') return kanban;
+    try {
+        if ((window.localStorage || window.sessionStorage).getItem(`task_${obj.id}_${kr.id}_${task.id}`) === 'true') return 'done';
+    } catch {}
+    return 'todo';
+}
+
+function buildExportData() {
     const costSummary = buildCostSummary();
 
-    const exportData = {
+    return {
         metadata: {
             title: analysisResult.overview?.title || 'Projeto',
             genre: analysisResult.genreLabel,
@@ -5568,14 +5578,21 @@ function exportResults() {
                 tasks: (kr.tasks || []).map(t => ({
                     id: t.id,
                     title: t.title,
+                    ...(workTaskDescription(t) ? { description: workTaskDescription(t) } : {}),
                     estimatedDays: t.estimatedDays,
                     priority: t.priority,
                     type: t.type,
+                    status: taskStatusFor(obj, kr, t),
                     ...(t.milestoneId ? { milestoneId: t.milestoneId } : {})
                 }))
             }))
         }))
     };
+}
+
+function exportResults() {
+    if (!analysisResult) return;
+    const exportData = buildExportData();
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -5587,6 +5604,21 @@ function exportResults() {
     URL.revokeObjectURL(url);
 
     showNotification('Roadmap exportado com sucesso!', 'success');
+}
+
+// Kit de IA: roadmap + CLI + skills de status e roadmap para Claude Code e Codex (ver aiKit.js)
+function exportAiKit() {
+    if (!analysisResult) return;
+    const files = AiKit.buildKitFiles(buildExportData());
+    const blob = new Blob([AiKit.buildZip(files)], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kit_ia_${AiKit.slug(analysisResult.overview?.title)}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showNotification('Kit de IA baixado! Descompacte na raiz do repositório do jogo.', 'success');
 }
 
 // ============================================================
@@ -6675,6 +6707,7 @@ function handleImportedJson(json, filename) {
     let workspaceScopeData = null;
     let taskProgressData = null;
     let boardSelectionData = null;
+    let kanbanStateData = null;
     let projectName = filename.replace(/\.json$/i, '');
 
     // Formato B: projeto salvo pelo sistema de projetos
@@ -6694,6 +6727,7 @@ function handleImportedJson(json, filename) {
         analysisData = normalizeExportToAnalysis(json);
         hourlyRateData = json.hourlyRates || json.costSummary?.hourlyRates || null;
         workspaceScopeData = json.workspaceScope || null;
+        ({ taskProgressData, boardSelectionData, kanbanStateData } = statusDataFromExport(json));
     }
     // Formato C: analysisResult puro
     else if (json.overview && json.objectives) {
@@ -6746,7 +6780,7 @@ function handleImportedJson(json, filename) {
     document.getElementById('importModalWarning').textContent = warning;
 
     // Guarda dados para confirmar
-    _pendingImportData = { analysisData, teamData, hourlyRateData, workspaceScopeData, taskProgressData, boardSelectionData, projectName: title };
+    _pendingImportData = { analysisData, teamData, hourlyRateData, workspaceScopeData, taskProgressData, boardSelectionData, kanbanStateData, projectName: title };
 
     document.getElementById('importConfirmBtn').onclick = confirmImport;
     document.getElementById('importModalOverlay').classList.add('active');
@@ -6754,7 +6788,7 @@ function handleImportedJson(json, filename) {
 
 function confirmImport() {
     if (!_pendingImportData) return;
-    const { analysisData, teamData, hourlyRateData, workspaceScopeData, taskProgressData, boardSelectionData, projectName } = _pendingImportData;
+    const { analysisData, teamData, hourlyRateData, workspaceScopeData, taskProgressData, boardSelectionData, kanbanStateData, projectName } = _pendingImportData;
 
     // Aplica ao estado global
     analysisResult = analysisData;
@@ -6768,6 +6802,10 @@ function confirmImport() {
     // Aplica progresso e seleção de board se existirem
     if (taskProgressData) restoreTaskProgress(taskProgressData);
     restoreBoardSelection(boardSelectionData || {});
+    if (kanbanStateData) {
+        kanbanTaskStates = { ...kanbanStateData };
+        kanbanSaveStates();
+    }
 
     updateSaveBtn();
 
@@ -6780,6 +6818,30 @@ function confirmImport() {
 function closeImportModal() {
     document.getElementById('importModalOverlay').classList.remove('active');
     _pendingImportData = null;
+}
+
+/**
+ * Lê o "status" das tarefas de um export (atualizado pelas skills de IA via .producer/roadmap.json)
+ * e devolve o progresso da lista, a seleção do quadro e as colunas do kanban.
+ */
+function statusDataFromExport(exportJson) {
+    const taskProgress = {};
+    const boardSelection = {};
+    const kanbanStates = {};
+    let hasStatus = false;
+    (exportJson.objectives || []).forEach(obj => (obj.keyResults || []).forEach(kr => (kr.tasks || []).forEach(t => {
+        if (!t.status || !obj.id || !kr.id || !t.id) return;
+        hasStatus = true;
+        const status = t.status === 'done' || t.status === 'doing' ? t.status : 'todo';
+        taskProgress[`task_${obj.id}_${kr.id}_${t.id}`] = status === 'done';
+        if (status !== 'todo') {
+            const key = workTaskKey(obj.id, kr.id, t.id);
+            boardSelection[key] = true;
+            kanbanStates[key] = status;
+        }
+    })));
+    if (!hasStatus) return { taskProgressData: null, boardSelectionData: null, kanbanStateData: null };
+    return { taskProgressData: taskProgress, boardSelectionData: boardSelection, kanbanStateData: kanbanStates };
 }
 
 /**
@@ -6815,6 +6877,7 @@ function normalizeExportToAnalysis(exportJson) {
                 tasks: (kr.tasks || []).map(t => ({
                     id: t.id || ('t_' + Math.random().toString(36).slice(2)),
                     title: t.title || '',
+                    ...(t.description ? { description: t.description } : {}),
                     estimatedDays: t.estimatedDays || 2,
                     points: t.estimatedDays || 2,
                     priority: t.priority || 'medium',

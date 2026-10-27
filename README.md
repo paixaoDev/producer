@@ -139,6 +139,38 @@ Clique em **Exportar** para baixar o roadmap completo em JSON. O arquivo contém
 
 O JSON pode ser importado em ferramentas como Notion, Linear, Produto ou processado por scripts próprios.
 
+Cada tarefa exportada traz também `description` e `status` (`todo`, `doing` ou `done`). Ao importar o JSON de volta, o status volta para a lista e para o quadro.
+
+### Kit para IA (Claude Code e Codex)
+
+Em **Ações → Baixar kit para IA (skills)** o Producer gera um `.zip` para descompactar na raiz do repositório do jogo:
+
+```
+.producer/roadmap.json            # roadmap com status (importe de volta no Producer)
+.producer/producer.js             # CLI sem dependências (Node 16+)
+ROADMAP.md                        # roadmap legível, regenerado pela CLI
+.claude/skills/producer-status/   # skill: quanto falta em cada etapa + statusline
+.claude/skills/producer-roadmap/  # skill: marcar/criar tarefas e atualizar o roadmap
+.agents/skills/...                # as mesmas skills para o Codex
+```
+
+Comandos da CLI:
+
+| Comando | O que faz |
+|---|---|
+| `node .producer/producer.js status` | Tabela com feitas, em andamento, faltam e dias restantes por etapa |
+| `node .producer/producer.js statusline` | Uma linha para a statusline: `Jogo │ ✓ PoC │ ▶ Protótipo 40% · faltam 18 (~22d) │ Demo 31 │ 12% total` |
+| `node .producer/producer.js next 5` | Próximas tarefas da etapa atual |
+| `node .producer/producer.js set <id> doing\|done\|todo` | Muda o status e regenera o `ROADMAP.md` |
+| `node .producer/producer.js add --kr <id> --title "..."` | Cria uma tarefa nova |
+| `node .producer/producer.js sync` | Aplica as caixas marcadas à mão no `ROADMAP.md` |
+
+Para a statusline do Claude Code, adicione em `.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command", "command": "node .producer/producer.js statusline" } }
+```
+
 O botão **Copiar texto** na seção de Resumo para Edital copia o texto formatado diretamente para a área de transferência.
 
 ---
@@ -155,6 +187,7 @@ Se a geração for interrompida (queda de conexão, erro de API, fechar o navega
 producer/
 ├── index.html      # Interface completa (upload, loading, resultados)
 ├── script.js       # Toda a lógica: parsing, IA, rendering, scheduling
+├── aiKit.js        # Kit para IA: CLI de status/roadmap, skills e zip
 ├── styles.css      # CSS com variáveis, timeline, cards, filtros
 ├── LICENSE         # MIT
 └── README.md       # Este arquivo
