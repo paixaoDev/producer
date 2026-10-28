@@ -1742,6 +1742,7 @@ async function analyzeDocument() {
         const consolidatedMD = buildConsolidatedMD_v2(phase1md, milestoneList, featureList, phase3mds);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
         analysisResult.documentoFeatures = documentoFeatures;
+        appendGenerationLog('Tamanho de cada versão', 'fas fa-ruler', relatorioVersoesTexto(relatorioVersoes(analysisResult.objectives, gddNormalizado.tamanho_equipe), gddNormalizado.tamanho_equipe));
         resetWorkspaceScopeState();
 
         // Geração concluída — limpa o cache de progresso
@@ -2281,12 +2282,12 @@ Retorne APENAS o Markdown abaixo, sem texto antes ou depois:
 ## Marco 1: PoC — [nome específico do jogo]
 - Tipo: poc
 - Prova de Conceito: [descreva em 1-2 frases o que o jogador consegue FAZER nessa PoC — o loop mínimo jogável de ponta a ponta]
-- O que deve existir: [liste apenas o que é necessário para o loop mínimo funcionar — tudo cru, sem arte, sem som, 7 dias]
+- O que deve existir: [liste apenas o que é necessário para o loop mínimo funcionar — tudo cru, sem arte, sem som, cabe em ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.poc.weeks)}]
 - O que NÃO deve existir: [arte final, som, menus, save/load, conteúdo além do mínimo]
 - Critérios de aceite: [como saber que está pronto — foco no loop funcionando]
 - Áreas envolvidas: programming | design
 
-## Marco 2: Prototipo — [nome específico]
+## Marco 2: MVP — [nome específico]
 - Tipo: prototype
 - O que deve existir: [liste apenas o que sustenta o loop de diversão — sem infraestrutura, sem conteúdo completo]
 - Critérios de aceite: [jogador joga e quer continuar]
@@ -2385,6 +2386,7 @@ function extractMilestonesFromMD(md) {
 async function mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey, onProgress, onLog, gddLeitura = null) {
     const results = {};
     const docFeatures = gddLeitura?.documento?.features || [];
+    const equipe = GddReader.parseTeamSize(gddNormalizado.tamanho_equipe);
     // Features do documento já planejadas em versões anteriores
     const jaPlanejadas = new Set();
 
@@ -2418,7 +2420,10 @@ Tipo: ${ms.type}
 O que deve existir nesta versão: ${ms.whatExists.join(' | ')}
 Áreas envolvidas: ${ms.areas.join(', ')}
 
-Cada marco é uma VERSÃO jogável do jogo (PoC, protótipo, demo, vertical slice, alpha...).
+Cada marco é uma VERSÃO jogável do jogo (PoC, MVP, demo, vertical slice, alpha...).
+TAMANHO DESTA VERSÃO: ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS[ms.type]?.weeks || 4)} de calendário, equipe de ${equipe} pessoa(s) ≈ ${formatNumberBR(GddReader.versionBudgetHours(ms.type, equipe))} horas de trabalho.
+Cada entrega vira de ${(GddReader.TASK_TARGETS[ms.type] || GddReader.TASK_TARGETS.prototype).min} a ${(GddReader.TASK_TARGETS[ms.type] || GddReader.TASK_TARGETS.prototype).max} tarefas de 1-4h. Escolha entregas que somadas caibam nessas horas:
+o que é essencial para esta versão entra; o que não cabe fica para a versão seguinte (nada é descartado, só adiado).
 ${docFeatures.length
     ? `Escolha no documento as features que entram nesta versão e diga, para cada área, QUAL PARTE da feature é feita nesta versão.
 Cada entrega referencia a feature do documento com [ref: Fxx]. Uma mesma feature do documento pode aparecer em várias versões, cada vez com uma parte diferente
@@ -2449,7 +2454,7 @@ REGRAS GERAIS:
   não apenas o sistema de controle do jogador
 
 REGRAS ESPECÍFICAS POR TIPO DE MARCO:
-${ms.type === 'poc' ? `POC (7 dias — loop mínimo completo):
+${ms.type === 'poc' ? `POC (${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.poc.weeks)} — loop mínimo completo):
 - OBRIGATÓRIO: o jogador executa a ação principal → algo reage → existe condição de fim.
   Exemplos: boss atira de volta | plataforma colide | puzzle detecta vitória | inimigo persegue | turno do oponente
 - NUNCA inclua: arte final, cenário detalhado, áudio, UI polida, save/load, menus, conteúdo além do mínimo
@@ -2858,9 +2863,10 @@ function extractSubareasFromMD(md) {
 }
 
 function roadmapPhaseContractText() {
-    return `CONTRATO DAS FASES DO ROADMAP (válido para qualquer gênero):
+    return `CONTRATO DAS VERSÕES DO JOGO (válido para qualquer gênero).
+Cada marco é uma versão jogável. A duração ao lado é o tempo de calendário da versão — o escopo precisa caber nele.
 
-POC (7 dias exatos):
+POC (${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.poc.weeks)}):
   PERGUNTA: "Consigo fazer esse jogo?"
   REGRA DE OURO: o jogador executa a ação principal → algo reage → existe condição de fim (vitória/derrota/próxima fase).
   Exemplos por gênero:
@@ -2873,7 +2879,7 @@ POC (7 dias exatos):
   OBRIGATÓRIO: loop completo de ponta a ponta (ação → reação → resultado), mesmo que cru.
   PROIBIDO: arte final, áudio final, UI polida, save/load, menus, balanceamento, conteúdo além do mínimo.
 
-PROTOTYPE (≈ 3-6 meses):
+MVP / PROTOTYPE (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.prototype.weeks)} após a PoC):
   PERGUNTA: "Isso é divertido?"
   Valida o loop de diversão. Assuma que a PoC existe.
   OBRIGATÓRIO: o principal desafio/antagonista/obstáculo do jogo com comportamento real (não placeholder de input),
@@ -2888,30 +2894,30 @@ PROTOTYPE (≈ 3-6 meses):
     estratégia: IA de oponente básica, 2-3 tipos de unidades com comportamento distinto
   PROIBIDO: save/load, troca de fases/cenas, inventário completo, menus polidos, todos os bosses/conteúdo.
 
-DEMO (≈ 2-4 meses após Prototype):
+DEMO (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.demo.weeks)} após o MVP):
   PERGUNTA: "Alguém quer jogar isso?"
   Build pública com início-meio-fim claro. Diferencial visível. Estabilidade para evento/Steam Next Fest.
   OBRIGATÓRIO: narrativa de abertura básica, caminho/sequência completa, polimento visual suficiente, áudio básico.
   Duração ideal: 15-30 minutos de jogo.
 
-VERTICAL SLICE (≈ 3-4 meses após Demo):
+VERTICAL SLICE (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.vertical_slice.weeks)} após a Demo):
   PERGUNTA: "Consigo terminar esse jogo nesse nível de qualidade?"
   Uma fatia polida com qualidade de lançamento + INFRAESTRUTURA completa.
   OBRIGATÓRIO: arte final, áudio final, UI final, save/load, troca de fases/cenas, fluxo de menus completo.
   O jogador joga do início ao fim dessa fatia como se fosse o jogo real.
 
-ALPHA (≈ 4-6 meses após VS):
+ALPHA (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.alpha.weeks)} após o VS):
   Jogo completo internamente: todos os sistemas, todo o conteúdo principal, bugs ok.
   Não entram mecânicas novas a partir daqui.
 
-BETA (≈ 2-3 meses após Alpha):
+BETA (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.beta.weeks)} após o Alpha):
   Conteúdo completo. Foco em balanceamento, QA externo, performance, localização, acessibilidade.
   Zero escopo novo.
 
-GOLD (≈ 1-2 meses após Beta):
+GOLD (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.gold.weeks)} após o Beta):
   Candidato a lançamento. Certificação/submissão de plataforma. Zero bugs críticos.
 
-RELEASE:
+RELEASE (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.release.weeks)}):
   Publicação, loja, comunicação, monitoramento, hotfixes, suporte pós-lançamento.`;
 }
 
@@ -3147,20 +3153,19 @@ function formatMilestoneMonth(month) {
 function normalizeMilestoneSequence(milestones, totalMonths = 24) {
     const phaseOrder = ['poc', 'prototype', 'demo', 'vertical_slice', 'alpha', 'beta', 'gold', 'release'];
 
-    // poc: sem valor fixo, cai em ~10% do projeto como fallback
-    // prototype: golden rule 7 dias — sempre 0.25 meses, nunca muda
+    // poc e prototype (MVP): duração vem de GddReader.VERSION_BUDGETS
     // demais fases: distribuídas entre o mês do prototype e o total
     const getDefaultMonth = (type, total) => {
-        if (type === 'poc')       return 0.25;                            // golden rule: 7 dias
-        if (type === 'prototype') return 5;                               // média de 5 meses, pode ser mais
+        if (type === 'poc')       return GddReader.VERSION_BUDGETS.poc.weeks / 4;   // PoC: 2 semanas
+        if (type === 'prototype') return (GddReader.VERSION_BUDGETS.poc.weeks + GddReader.VERSION_BUDGETS.prototype.weeks) / 4; // MVP: 2 meses depois
         // fases restantes distribuídas entre mês 1 (após proto) e o total
         const remaining = { demo: 0.3, vertical_slice: 0.5, alpha: 0.68, beta: 0.84, gold: 0.94, release: 1 };
         return 1 + (total - 1) * remaining[type];
     };
 
     const phaseDefaults = {
-        poc:            { title: 'PoC — Jam Build (7 dias)' },
-        prototype:      { title: 'Prototipo Jogavel' },
+        poc:            { title: 'PoC' },
+        prototype:      { title: 'MVP' },
         demo:           { title: 'Demo Jogavel' },
         vertical_slice: { title: 'Vertical Slice' },
         alpha:          { title: 'Alpha Interna' },
@@ -3189,8 +3194,8 @@ function normalizeMilestoneSequence(milestones, totalMonths = 24) {
         const defaults = phaseDefaults[type];
         const existing = byType.get(type) || {};
         const defaultMonth = getDefaultMonth(type, totalMonths || 24);
-        // poc: golden rule de 7 dias — sempre forçamos 0.25 meses, ignora o que a IA gerou
-        // prototype: usa o valor da IA se gerou algo razoável, senão cai no padrão de 5 meses
+        // poc: sempre forçamos a duração da PoC, ignora o que a IA gerou
+        // prototype (MVP): usa o valor da IA se gerou algo razoável, senão cai no padrão
         const forceDefault = type === 'poc';
         const raw = forceDefault ? defaultMonth : (existing.month || defaultMonth);
         const month = Math.min(totalMonths || 24, Math.max(lastMonth + 0.25, raw));
@@ -4440,6 +4445,25 @@ function handleTeamSlider(area, rawValue) {
     onTeamConfigChange();
 }
 
+// Horas planejadas em cada versão do jogo × tamanho da versão
+function relatorioVersoes(objectives, teamSize) {
+    const horas = {};
+    (objectives || []).forEach(obj => (obj.keyResults || []).forEach(kr => (kr.tasks || []).forEach(task => {
+        const type = task.milestoneType || obj.milestoneType;
+        if (!type) return;
+        horas[type] = (horas[type] || 0) + taskHours(task);
+    })));
+    return GddReader.checkVersionBudgets(horas, GddReader.parseTeamSize(teamSize), { hoursPerDay: HOURS_PER_ESTIMATED_DAY });
+}
+
+function relatorioVersoesTexto(rows, teamSize) {
+    const equipe = GddReader.parseTeamSize(teamSize);
+    const marca = { ok: '✓ cabe', acima: '⚠ acima do tamanho da versão', abaixo: '• sobra tempo' };
+    return [`Equipe considerada: ${equipe} pessoa(s), ${HOURS_PER_ESTIMATED_DAY}h por dia`]
+        .concat(rows.map(r => `${r.label} (${GddReader.formatWeeks(r.weeks)}): ${formatNumberBR(r.plannedHours)}h planejadas de ${formatNumberBR(r.budgetHours)}h — ${marca[r.status]}`))
+        .join('\n');
+}
+
 function populateOverview() {
     const overviewContent = document.getElementById('overviewContent');
     const overview = analysisResult.overview;
@@ -4451,6 +4475,7 @@ function populateOverview() {
     }
 
     const totalTasks = countTotalTasks();
+    const versoes = relatorioVersoes(analysisResult.objectives, overview.teamSize);
 
     // Atualiza título no header da seção
     const titleEl = document.getElementById('resultsProjectTitle');
@@ -4481,6 +4506,12 @@ function populateOverview() {
         <div class="overview-desc-row">
             ${overview.description || ''}
         </div>
+        ${versoes.length ? `<div class="overview-desc-row">
+            ${versoes.map(r => `<div class="overview-line" title="${formatNumberBR(r.plannedHours)}h planejadas de ${formatNumberBR(r.budgetHours)}h">
+                <span class="overview-line-label">${escapeHtml(r.label)} · ${GddReader.formatWeeks(r.weeks)}</span>
+                <span class="overview-line-value">${formatNumberBR(r.plannedHours)}h / ${formatNumberBR(r.budgetHours)}h ${r.status === 'ok' ? '✓' : r.status === 'acima' ? '⚠ acima' : '• sobra'}</span>
+            </div>`).join('')}
+        </div>` : ''}
         <div class="overview-row">
             <div class="overview-line">
                 <span class="overview-line-label">Tarefas</span>

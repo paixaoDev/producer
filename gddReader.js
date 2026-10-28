@@ -33,6 +33,20 @@
         release:        { min: 5,  max: 10 },
     };
 
+    // Tamanho de cada versão do jogo, em semanas de calendário. É o orçamento usado
+    // para decidir quanto escopo cabe em cada versão (horas = semanas × 5 dias × horas/dia × pessoas).
+    const VERSION_BUDGETS = {
+        poc:            { label: 'PoC',             weeks: 2 },
+        prototype:      { label: 'MVP (protótipo)', weeks: 8 },
+        demo:           { label: 'Demo',            weeks: 8 },
+        vertical_slice: { label: 'Vertical Slice',  weeks: 12 },
+        alpha:          { label: 'Alpha',           weeks: 16 },
+        beta:           { label: 'Beta',            weeks: 8 },
+        gold:           { label: 'Gold',            weeks: 4 },
+        release:        { label: 'Lançamento',      weeks: 2 },
+    };
+    const VERSION_ORDER = Object.keys(VERSION_BUDGETS);
+
     // Categorias das features do documento. areas = quem costuma trabalhar nelas.
     const FEATURE_CATEGORIES = [
         { key: 'mecanica',   label: 'Mecânicas e ações do jogador', areas: ['programming', 'design'] },
@@ -426,6 +440,39 @@
         return { oversized, tooFew, target, ok: !oversized.length && !tooFew };
     }
 
+    // ---------------- Orçamento por versão ----------------
+
+    // "solo" → 1, "3 pessoas" → 3, "2-4 devs" → 2; sem número → 1
+    function parseTeamSize(value) {
+        const text = normalizeText(value);
+        if (!text || /solo|sozinh|indie de 1|uma pessoa/.test(text)) return 1;
+        const n = parseInt(text.match(/\d+/)?.[0], 10);
+        return n > 0 && n < 500 ? n : 1;
+    }
+
+    function formatWeeks(weeks) {
+        if (weeks >= 8 && weeks % 4 === 0) return `${weeks / 4} meses`;
+        return weeks === 1 ? '1 semana' : `${weeks} semanas`;
+    }
+
+    function versionBudgetHours(type, teamSize = 1, hoursPerDay = HOURS_PER_DAY) {
+        const weeks = VERSION_BUDGETS[type]?.weeks || 4;
+        return weeks * 5 * hoursPerDay * Math.max(1, teamSize);
+    }
+
+    // Compara as horas planejadas de cada versão com o orçamento dela
+    function checkVersionBudgets(hoursByType, teamSize = 1, { hoursPerDay = HOURS_PER_DAY } = {}) {
+        return VERSION_ORDER
+            .filter(type => hoursByType[type] !== undefined)
+            .map(type => {
+                const budgetHours = versionBudgetHours(type, teamSize, hoursPerDay);
+                const plannedHours = Math.round(hoursByType[type] * 10) / 10;
+                const ratio = budgetHours ? plannedHours / budgetHours : 0;
+                const status = ratio > 1.25 ? 'acima' : ratio < 0.5 ? 'abaixo' : 'ok';
+                return { type, label: VERSION_BUDGETS[type].label, weeks: VERSION_BUDGETS[type].weeks, budgetHours, plannedHours, ratio, status };
+            });
+    }
+
     // ---------------- DOCX ----------------
 
     function decodeXmlEntities(str) {
@@ -517,6 +564,12 @@
         MAX_TASK_HOURS,
         HOURS_PER_DAY,
         TASK_TARGETS,
+        VERSION_BUDGETS,
+        VERSION_ORDER,
+        parseTeamSize,
+        formatWeeks,
+        versionBudgetHours,
+        checkVersionBudgets,
         FEATURE_CATEGORIES,
         normalizeText,
         tokenize,

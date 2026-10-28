@@ -135,6 +135,19 @@ assert.equal(R.analyzeTaskGranularity(small.slice(0, 3), 'prototype').tooFew, tr
 const big = [...small, { title: 'Grande', estimatedHours: 12 }];
 assert.equal(R.analyzeTaskGranularity(big, 'prototype').oversized.length, 1);
 
+// ---------- version budgets ----------
+assert.equal(R.VERSION_BUDGETS.poc.weeks, 2, 'PoC takes two weeks');
+assert.equal(R.VERSION_BUDGETS.prototype.weeks, 8, 'MVP takes two months');
+assert.equal(R.formatWeeks(2), '2 semanas');
+assert.equal(R.formatWeeks(8), '2 meses');
+assert.equal(R.parseTeamSize('solo'), 1);
+assert.equal(R.parseTeamSize('3 pessoas'), 3);
+assert.equal(R.parseTeamSize('não especificado'), 1);
+assert.equal(R.versionBudgetHours('poc', 1), 60);
+assert.equal(R.versionBudgetHours('prototype', 2), 480);
+const budget = R.checkVersionBudgets({ prototype: 100, poc: 90 }, 1);
+assert.deepEqual(budget.map(r => [r.type, r.status]), [['poc', 'acima'], ['prototype', 'abaixo']], 'ordered by version');
+
 // ---------- DOCX ----------
 function buildZip(name, content) {
   const data = Buffer.from(content, 'utf8');
