@@ -135,6 +135,29 @@ assert.equal(R.analyzeTaskGranularity(small.slice(0, 3), 'prototype').tooFew, tr
 const big = [...small, { title: 'Grande', estimatedHours: 12 }];
 assert.equal(R.analyzeTaskGranularity(big, 'prototype').oversized.length, 1);
 
+// scope notes and per-op source
+const doc3 = R.applyFeatureDocOps(doc2, R.parseFeatureDocOps(`## ESCOPO
+- detalhe: prazo total de 14 meses
+- demo para o Next Fest com o Mangue
+
+## NOVA: Garça
+- categoria: inimigo
+- detalhe: bicada em linha reta`), { source: op => `sec-${op.name}` });
+assert.deepEqual(doc3.scopeNotes, ['prazo total de 14 meses', 'demo para o Next Fest com o Mangue']);
+assert.equal(doc3.features.length, 4, 'scope block is not a feature');
+assert.deepEqual(doc3.features[3].sources, ['sec-Garça']);
+assert.match(R.featureDocToMarkdown(doc3), /## Notas de escopo e cronograma do GDD\n\n- prazo total de 14 meses/);
+assert.equal(R.bestSectionTitle(sections, 'Garça Sombria mergulha'), 'Bosses');
+
+// excerpts: weak matches dropped, cut at a boundary
+const many = R.splitSections('# Arte\nPixel art com tiles.\n# Movimento\nPulo variável e dash. Coyote time de 0.1s. Wall jump liberado.\n# Inimigos\nUm inimigo usa dash.');
+const ex = R.findRelevantExcerpts(many, 'pulo variável wall jump coyote dash', { maxChars: 400 });
+assert.match(ex, /### Movimento/);
+assert.doesNotMatch(ex, /### Arte/);
+const longBody = R.formatExcerpts([{ id: 0, title: 'T', body: 'Primeira frase longa aqui. ' + 'palavra '.repeat(200) }], 400);
+assert.match(longBody, /\[…\]$/);
+assert.doesNotMatch(longBody, /palavr \[…\]|alavra[^ ]/);
+
 // ---------- version budgets ----------
 assert.equal(R.VERSION_BUDGETS.poc.weeks, 2, 'PoC takes two weeks');
 assert.equal(R.VERSION_BUDGETS.prototype.weeks, 8, 'MVP takes two months');

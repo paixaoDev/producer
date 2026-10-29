@@ -2040,7 +2040,7 @@ REGRAS IMPORTANTES:
 - Para personagens_principais e ambientes_principais: liste TODOS mencionados no GDD, com seus nomes reais.
 - Para sistema_finais: descreva cada final e suas condições específicas.
 - Para perspectiva e estilo_visual: OBRIGATÓRIO identificar se o jogo é 2D ou 3D. Procure pistas em campos como "Gráficos", "Engine", referências de jogos (ex: Mario Odyssey = 3D, Hollow Knight = 2D) e descrições do cenário. Em caso de dúvida, prefira 3D se houver qualquer menção a espaço tridimensional, cenário 3D ou engine com suporte 3D.
-- Cada campo pode ter até 3 linhas se necessário para capturar detalhes importantes.
+- Cada campo é um texto (string JSON, nunca lista ou objeto) e pode ser longo para não perder detalhes importantes.
 
 CAMPOS A PREENCHER:
 ${camposExplicados}
@@ -2116,7 +2116,11 @@ async function montarDocumentoFeatures(gddSections, gddNormalizado, apiKey, onPr
     let doc = GddReader.createFeatureDoc();
 
     for (let i = 0; i < chunks.length; i++) {
-        const titulos = (chunks[i].match(/^### .+$/gm) || []).map(t => t.slice(4)).slice(0, 6).join(', ');
+        const secoesDoBloco = GddReader.splitSections(chunks[i]);
+        const titulos = secoesDoBloco.map(sec => sec.title).join(' | ');
+        // Cada feature registra a seção do bloco que mais fala dela (não o bloco inteiro)
+        const origem = op => GddReader.bestSectionTitle(secoesDoBloco, [op.name, op.summary, ...op.details].join(' '))
+            || secoesDoBloco[0]?.title || `parte ${i + 1}`;
         const indice = GddReader.formatFeatureIndex(doc, { maxChars: 9000 });
         const prompt = `Você é um produtor de jogos lendo o GDD de "${gddNormalizado?.titulo || 'um jogo'}" para montar o DOCUMENTO DE FEATURES do projeto.
 O GDD está sendo lido em partes. Esta é a parte ${i + 1} de ${chunks.length}.
@@ -2131,9 +2135,11 @@ O QUE FAZER COM ESTA PARTE DO GDD:
 - Se a parte fala de algo que JÁ está no documento, use "## ATUALIZA Fxx" e escreva só o que é NOVO (regras, números, estados, variações, conteúdo).
 - Se fala de algo que ainda não está no documento, use "## NOVA: Nome".
 - Não repita o que já está no índice. Se a parte não traz nada novo sobre uma feature, não a mencione.
-- Um boss, uma fase ou um personagem com comportamento ou arte próprios é uma feature própria. Itens simples de uma lista (ex: 12 armas parecidas) podem ser "conteudo" de uma feature.
+- Um boss, uma fase, um inimigo ou um personagem com comportamento ou arte próprios é uma feature própria. Itens simples de uma lista (ex: 12 armas parecidas, 40 coletáveis iguais) podem ser "conteudo" de uma feature.
 - Use APENAS o que está escrito. Preserve os nomes próprios exatamente.
 - Detalhes devem ser concretos: inputs, regras, números, estados, animações, condições, quantidades.
+- Prazos, cronograma, tamanho de equipe e pedidos de versão (ex: "queremos uma demo com X") NÃO são features: coloque-os num bloco "## ESCOPO", um por linha.
+- Em "depende de", use o Fxx de features que já estão no índice ou o NOME de uma feature nova desta mesma resposta.
 
 FORMATO:
 ## NOVA: Nome da feature
@@ -2141,11 +2147,14 @@ FORMATO:
 - resumo: uma frase sobre o que é
 - detalhe: uma regra ou fato concreto (uma linha por detalhe)
 - conteudo: nome de um item/variação a produzir :: o que ele tem de específico
-- depende de: Fxx (se depende de outra feature)
+- depende de: Fxx ou Nome (se depende de outra feature)
 
 ## ATUALIZA F03
 - detalhe: o que esta parte acrescenta
 - conteudo: item novo :: detalhe
+
+## ESCOPO
+- detalhe: prazo, cronograma ou pedido de versão citado nesta parte
 
 PARTE ${i + 1} DO GDD${titulos ? ` (seções: ${titulos})` : ''}:
 ${chunks[i]}
@@ -2154,7 +2163,7 @@ Retorne APENAS o Markdown com as operações, sem texto antes ou depois.`;
 
         try {
             const md = await callAIAPI(prompt, apiKey);
-            doc = GddReader.applyFeatureDocOps(doc, GddReader.parseFeatureDocOps(md), { source: titulos || `parte ${i + 1}` });
+            doc = GddReader.applyFeatureDocOps(doc, GddReader.parseFeatureDocOps(md), { source: origem });
         } catch (e) {
             console.warn(`Erro ao ler a parte ${i + 1} do GDD:`, e);
         }
@@ -2187,13 +2196,15 @@ function baixarDocumentoFeatures(documentoFeatures = analysisResult?.documentoFe
 function contextoGDDParaFeature(gddLeitura, ft) {
     if (!gddLeitura) return { especificacao: '', trechos: '' };
     const docFeatures = gddLeitura.documento?.features || [];
-    const especificacao = (ft.refs || [])
-        .map(id => docFeatures.find(f => f.id === id))
-        .filter(Boolean)
-        .map(GddReader.formatFeatureSpec)
-        .join('\n\n');
-    const trechos = GddReader.findRelevantExcerpts(gddLeitura.sections || [], `${ft.title} ${ft.description}`,
-        { maxChars: especificacao ? 1500 : 3500 });
+    const referenciadas = (ft.refs || []).map(id => docFeatures.find(f => f.id === id)).filter(Boolean);
+    const especificacao = referenciadas.map(GddReader.formatFeatureSpec).join('\n\n');
+    // Com especificação, os trechos de apoio vêm só das seções de onde a feature saiu
+    const origens = new Set(referenciadas.flatMap(f => f.sources));
+    const secoes = origens.size
+        ? (gddLeitura.sections || []).filter(sec => origens.has(sec.title))
+        : (gddLeitura.sections || []);
+    const trechos = GddReader.findRelevantExcerpts(secoes, `${ft.title} ${ft.description}`,
+        { maxChars: especificacao ? 1500 : 3500, maxSections: especificacao ? 2 : 4 });
     return { especificacao, trechos };
 }
 
@@ -2263,8 +2274,12 @@ GDD DO PROJETO:
 ${gddText}
 ${indiceFeatures ? `
 DOCUMENTO DE FEATURES (tudo que o GDD pede para construir). Cada marco é uma VERSÃO do jogo: escolha quais features
-(e qual parte de cada uma) entram em cada versão. Toda feature precisa entrar em alguma versão até o Alpha:
+(e qual parte de cada uma) entram em cada versão. Toda feature precisa entrar em alguma versão até o Alpha
+(cite os Fxx em "O que deve existir"):
 ${indiceFeatures}
+` : ''}${gddLeitura?.documento?.scopeNotes?.length ? `
+PEDIDOS DE ESCOPO E CRONOGRAMA DO GDD (respeite-os):
+${gddLeitura.documento.scopeNotes.map(n => `- ${n}`).join('\n')}
 ` : ''}
 Retorne APENAS o Markdown abaixo, sem texto antes ou depois:
 
@@ -2387,14 +2402,18 @@ async function mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey
     const results = {};
     const docFeatures = gddLeitura?.documento?.features || [];
     const equipe = GddReader.parseTeamSize(gddNormalizado.tamanho_equipe);
-    // Features do documento já planejadas em versões anteriores
-    const jaPlanejadas = new Set();
+    const notasEscopo = (gddLeitura?.documento?.scopeNotes || []).map(n => `- ${n}`).join('\n');
+    // O que já foi planejado de cada feature do documento nas versões anteriores (id → ["PoC: Dash cru", ...])
+    const jaPlanejadas = new Map();
 
     for (let i = 0; i < milestoneList.length; i++) {
         const ms = milestoneList[i];
         const gddCtx = gddCompleto(gddNormalizado);
         const indiceFeatures = docFeatures.length
-            ? docFeatures.map(f => `${f.id} [${f.category}] ${f.name}${f.summary ? ` — ${f.summary}` : ''}${jaPlanejadas.has(f.id) ? ' (já iniciada em versão anterior)' : ''}`).join('\n').slice(0, 9000)
+            ? docFeatures.map(f => {
+                const feito = jaPlanejadas.get(f.id);
+                return `${f.id} [${f.category}] ${f.name}${f.summary ? ` — ${f.summary}` : ''}${feito ? `\n    já planejado: ${feito.join('; ')}` : ''}`;
+            }).join('\n').slice(0, 12000)
             : '';
         const trechos = gddLeitura && !docFeatures.length
             ? GddReader.findRelevantExcerpts(gddLeitura.sections || [], `${ms.title} ${ms.whatExists.join(' ')}`, { maxChars: 4000 })
@@ -2409,8 +2428,12 @@ ${roadmapPhaseContractText()}
 GDD DO PROJETO (resumo):
 ${gddCtx.substring(0, 8000)}
 ${indiceFeatures ? `
-DOCUMENTO DE FEATURES DO JOGO (tudo que o GDD pede para construir — sem versão):
+DOCUMENTO DE FEATURES DO JOGO (tudo que o GDD pede para construir — sem versão).
+"já planejado" mostra as entregas dessa feature em versões anteriores: planeje só o que falta.
 ${indiceFeatures}
+` : ''}${notasEscopo ? `
+PEDIDOS DE ESCOPO E CRONOGRAMA DO GDD (respeite-os ao escolher o que entra em cada versão):
+${notasEscopo}
 ` : ''}${trechos ? `
 TRECHOS ORIGINAIS DO GDD RELEVANTES PARA ESTE MARCO:
 ${trechos}
@@ -2422,8 +2445,8 @@ O que deve existir nesta versão: ${ms.whatExists.join(' | ')}
 
 Cada marco é uma VERSÃO jogável do jogo (PoC, MVP, demo, vertical slice, alpha...).
 TAMANHO DESTA VERSÃO: ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS[ms.type]?.weeks || 4)} de calendário, equipe de ${equipe} pessoa(s) ≈ ${formatNumberBR(GddReader.versionBudgetHours(ms.type, equipe))} horas de trabalho.
-Cada entrega vira de ${(GddReader.TASK_TARGETS[ms.type] || GddReader.TASK_TARGETS.prototype).min} a ${(GddReader.TASK_TARGETS[ms.type] || GddReader.TASK_TARGETS.prototype).max} tarefas de 1-4h. Escolha entregas que somadas caibam nessas horas:
-o que é essencial para esta versão entra; o que não cabe fica para a versão seguinte (nada é descartado, só adiado).
+Cada entrega costuma virar de 10 a 40 horas de tarefas de 1-4h. O TAMANHO EM HORAS É O LIMITE PRINCIPAL: escolha entregas que somadas caibam nele.
+O que é essencial para esta versão entra; o que não cabe fica para a versão seguinte (nada é descartado, só adiado).
 ${docFeatures.length
     ? `Escolha no documento as features que entram nesta versão e diga, para cada área, QUAL PARTE da feature é feita nesta versão.
 Cada entrega referencia a feature do documento com [ref: Fxx]. Uma mesma feature do documento pode aparecer em várias versões, cada vez com uma parte diferente
@@ -2438,16 +2461,16 @@ REGRAS GERAIS:
 - Conteúdo do documento NÃO é agrupado: cada boss, fase, personagem ou tela relevante para o marco vira sua própria feature
   (ex: "Boss Fulano — comportamento" [programming] e "Boss Fulano — sprite e animações" [art], em vez de "Implementar bosses")
 - Respeite estritamente o escopo do marco (não coloque no poc o que é do alpha)
-- Quantidade de features por marco (siga esses limites; use o limite de cima quando o documento tiver muitas features):
+- Quantidade de features por marco (referência; o tamanho em horas da versão manda):
   poc: 4-8 features (loop mínimo completo — ação + reação + condição de fim)
   prototype: 8-14 features (loop de diversão + principal antagonista/desafio real + arte de ambiente + HUD)
   demo: 6-12 features (sequência início-meio-fim, polimento suficiente para evento)
   vertical_slice: 8-14 features (infraestrutura: save/load, menus, qualidade de lançamento)
-  alpha: 10-24 features (todos os sistemas, todo o conteúdo principal completo — toda feature do documento que ainda não foi iniciada entra aqui)
+  alpha: 10-30 features (todos os sistemas, todo o conteúdo principal completo — toda feature do documento que ainda não foi planejada entra aqui)
   beta: 6-10 features (balanceamento, QA, localização, performance)
   gold: 4-8 features (certificação, build master, zero bugs críticos)
   release: 4-8 features (publicação, loja, monitoramento)
-- NUNCA repita features que são do marco anterior — cada marco adiciona algo novo
+- NUNCA repita o que já foi planejado em versão anterior — cada versão adiciona algo novo
 - Priorize SISTEMAS antes de CONTEÚDO: o sistema precisa existir antes de criar instâncias dele
   (ex: sistema de IA de inimigo → depois criar inimigos específicos; sistema de diálogo → depois criar diálogos)
 - O Prototype DEVE incluir o principal antagonista/obstáculo/desafio do jogo com comportamento real,
@@ -2490,15 +2513,21 @@ ${ms.type === 'release' ? `RELEASE (publicação e suporte):
 Retorne APENAS o Markdown:
 
 ## ${ms.title}
-### [area: programming] [ref: F01] Feature 1: [nome concreto — a parte da feature feita nesta versão]
+### [area: ${ms.areas[0] || 'programming'}] [ref: F01] Feature 1: [nome concreto — a parte da feature feita nesta versão]
 - Descrição: [o que entrega nesta versão, como verificar — cite as regras/números do documento]
 
-### [area: art] [ref: F01, F04] Feature 2: [nome concreto]
+### [area: uma das áreas envolvidas] [ref: F01, F04] Feature 2: [nome concreto]
 - Descrição: [o que entrega nesta versão, como verificar — cite as regras/números do documento]`;
 
         try {
             results[ms.id] = await callAIAPI(prompt, apiKey);
-            (results[ms.id].match(/\[ref:[^\]]+\]/gi) || []).forEach(r => GddReader.findFeatureRefs(r).forEach(id => jaPlanejadas.add(id)));
+            for (const line of results[ms.id].split('\n').filter(l => /^###\s/.test(l))) {
+                const titulo = line.replace(/^###\s*/, '').replace(/\[[^\]]*\]\s*:?\s*/g, '').replace(/^Feature\s+\d+:\s*/i, '').trim();
+                GddReader.findFeatureRefs(line).forEach(id => {
+                    if (!jaPlanejadas.has(id)) jaPlanejadas.set(id, []);
+                    jaPlanejadas.get(id).push(`${GddReader.VERSION_BUDGETS[ms.type]?.label || ms.type}: ${titulo}`);
+                });
+            }
         } catch (e) {
             console.warn(`Erro features ${ms.title}:`, e);
             results[ms.id] = `## ${ms.title}\n### [area: programming] Feature: [erro]\n- Descrição: Erro ao gerar features para este marco.`;
@@ -2599,31 +2628,32 @@ REGRAS DE TAMANHO:
 - Estimativa em HORAS: 1h, 2h, 3h ou ${GddReader.MAX_TASK_HOURS}h. Nunca mais que ${GddReader.MAX_TASK_HOURS}h. Prefira 1-2h.
 - Se algo levaria mais de ${GddReader.MAX_TASK_HOURS}h, divida em passos: estrutura → cada estado/variação → integração → ajuste → teste.
 - Uma tarefa = UM entregável. Se o título precisa de "e" para juntar duas coisas, são duas tarefas.
-- Cada estado, animação, variação, tela, inimigo ou fase citado no GDD é uma tarefa separada.
-- Quantidade: entre ${target.min} e ${target.max} tarefas para esta feature (marco ${ft.milestoneType}).
+- Cada estado, animação, variação, tela de interface (menu/HUD), inimigo ou fase citado no GDD é uma tarefa separada.
+- Quantidade de referência: ${target.min} a ${target.max} tarefas (marco ${ft.milestoneType}). Entrega pequena pode ter menos: NÃO invente tarefas para completar o número.
 
 REGRAS DE CONTEÚDO:
 - Verbo no início do título: Implementar, Criar, Modelar, Texturizar, Rigar, Animar, Testar, Compor, Projetar, Revisar, Integrar, Configurar, Balancear, Documentar, Exportar, Ajustar
-- Descrição: ferramenta ou engine, parâmetro técnico, arquivo/asset entregue
-- "pronto quando": o que alguém verifica em 1 minuto para saber que a tarefa está feita (ex: "boss troca para estado Ataque quando player entra no raio de 5m")
+- Descrição: ferramenta da engine do projeto (${gddNormalizado.engine || 'a engine do projeto'}), parâmetro técnico, arquivo/asset entregue
+- "pronto quando": o que alguém verifica em 1 minuto para saber que a tarefa está feita (ex: "boss troca para estado Ataque quando o player chega a 5 tiles")
+- Se o GDD não define um valor que a tarefa precisa (vida, tempo, dano...), escreva "valor a definir" e inclua uma tarefa de design para definir esse valor
 - Prioridade: critical | high | medium | low
-- Tipo: feature | art | design | audio | test | fix | config | doc
+- Tipo: feature | art | design | audio | test | fix | config | doc | balance
 - Use nomes REAIS do GDD (personagens, mecânicas, ambientes, itens). Não use nomes genéricos se o GDD tiver o nome.
 - Ordene na ordem em que devem ser feitas (sistemas antes de conteúdo; base antes dos detalhes).
 
-Exemplo correto (IA de inimigo no Prototype, cada linha cabe em meio dia):
-- [ ] Criar classe base da StateMachine do inimigo >> enum de estados + método ChangeState com callbacks Enter/Exit | 2h | critical | feature | pronto quando: troca de estado aparece no log
-- [ ] Implementar estado Patrulha >> NavMeshAgent percorrendo 3 waypoints em loop | 2h | high | feature | pronto quando: inimigo anda entre os waypoints sem travar
-- [ ] Implementar detecção do player >> raio 8m + ângulo 90° com raycast de linha de visão | 3h | high | feature | pronto quando: gizmo fica vermelho ao ver o player
-- [ ] Implementar estado Perseguição >> segue o player e volta a patrulhar após 4s sem vê-lo | 2h | high | feature | pronto quando: inimigo persegue e desiste
-- [ ] Implementar estado Ataque >> ativa hitbox por 0.3s e aplica 10 de dano, cooldown 1.5s | 2h | critical | feature | pronto quando: HP do player cai 10 por golpe
+Exemplo correto (formato e tamanho; IA de inimigo no MVP, cada linha cabe em meio dia — adapte à engine e à perspectiva do projeto):
+- [ ] Criar máquina de estados base do inimigo >> estados Patrulha/Alerta/Ataque + troca com entrada e saída de estado | 2h | critical | feature | pronto quando: troca de estado aparece no log
+- [ ] Implementar estado Patrulha >> anda entre 2 pontos da plataforma e vira na borda | 2h | high | feature | pronto quando: inimigo patrulha sem cair
+- [ ] Implementar detecção do player >> área de detecção de 6 tiles com checagem de linha de visão | 3h | high | feature | pronto quando: debug mostra quando o player é visto
+- [ ] Implementar estado Ataque >> ativa hitbox por 0.3s e tira 1 coração, recarga 1.5s | 2h | critical | feature | pronto quando: player perde 1 coração por golpe
+- [ ] Definir vida e tempos do inimigo >> tabela com vida, dano e recargas, valores a testar | 1h | medium | design | pronto quando: valores na planilha de balanceamento
 - [ ] Testar transições da IA em cena de teste >> 3 inimigos, todas as transições, lista de bugs | 1h | high | test | pronto quando: checklist de transições preenchido
 
 Retorne APENAS o Markdown:
 
 ## ${ft.title}
-- [ ] Título curto >> descrição técnica | 2h | high | feature | pronto quando: critério
-- [ ] Outra tarefa >> entregável concreto com ferramenta | 1h | medium | art | pronto quando: critério`;
+- [ ] Título curto >> descrição técnica | 2h | high | tipo | pronto quando: critério
+- [ ] Outra tarefa >> entregável concreto com ferramenta | 1h | medium | tipo | pronto quando: critério`;
 
         let tasksMD = null;
         for (let attempt = 0; attempt < 3 && !tasksMD; attempt++) {
@@ -5101,7 +5131,7 @@ function populateHierarchicalTasks() {
     const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
     const typeIcons = {
         feature: '⚙️', fix: '🐛', art: '🎨', design: '📐',
-        audio: '🔊', test: '🧪', config: '🔧'
+        audio: '🔊', test: '🧪', config: '🔧', doc: '📄', balance: '⚖️'
     };
 
     objList.forEach((obj, objIndex) => {
@@ -5614,7 +5644,7 @@ function populateTasksByMilestone() {
     const areaIcons = { programming: '💻', art: '🎨', design: '📋', audio: '🎵', qa: '🧪', production: '📊' };
     const areaColors = { programming: '#3b82f6', art: '#8b5cf6', design: '#10b981', audio: '#f59e0b', qa: '#ef4444', production: '#6366f1' };
     const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-    const typeIcons = { feature: '⚙️', fix: '🐛', art: '🎨', design: '📐', audio: '🔊', test: '🧪', config: '🔧' };
+    const typeIcons = { feature: '⚙️', fix: '🐛', art: '🎨', design: '📐', audio: '🔊', test: '🧪', config: '🔧', doc: '📄', balance: '⚖️' };
 
     // Associar objetivo ao menor marco cujo mês >= startMonth do objetivo
     function getMilestoneForObj(obj) {
@@ -8159,7 +8189,7 @@ function workCreateCard(ref, colName) {
 
     const prevCol = colName === 'doing' ? 'todo'  : colName === 'done' ? 'doing' : null;
     const nextCol = colName === 'todo'  ? 'doing' : colName === 'doing' ? 'done' : null;
-    const typeIcons = { feature:'⚙️', fix:'🐛', art:'🎨', design:'📐', audio:'🔊', test:'🧪', config:'🔧', doc:'📄' };
+    const typeIcons = { feature:'⚙️', fix:'🐛', art:'🎨', design:'📐', audio:'🔊', test:'🧪', config:'🔧', doc:'📄', balance:'⚖️' };
     const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
     const color = areaColors[obj.area] || '#6366f1';
     const sprintLabel = kr.sprintNumber ? `Sprint ${kr.sprintNumber}` : 'Sem sprint';

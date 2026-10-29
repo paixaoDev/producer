@@ -168,9 +168,11 @@
     }
 
     // Busca os trechos originais do GDD mais relevantes para um texto (ex: título da feature)
-    function findRelevantExcerpts(sections, query, { maxChars = 3000, maxSections = 4 } = {}) {
+    // Ordena as seções por relevância para um texto (TF-IDF simples, título pesa mais).
+    // Seções com menos de minRelative da nota da melhor são descartadas (evita trechos fora do assunto).
+    function rankSections(sections, query, { minRelative = 0.35 } = {}) {
         const terms = Array.from(new Set(tokenize(query)));
-        if (!terms.length || !sections?.length) return '';
+        if (!terms.length || !sections?.length) return [];
 
         const docs = sections.map(s => ({
             s,
@@ -192,18 +194,39 @@
             }
             return { s: d.s, score };
         }).filter(x => x.score > 0)
-          .sort((a, b) => b.score - a.score || a.s.id - b.s.id)
-          .slice(0, maxSections);
+          .sort((a, b) => b.score - a.score || a.s.id - b.s.id);
+        const top = scored[0]?.score || 0;
+        return scored.filter(x => x.score >= top * minRelative);
+    }
 
-        const perSection = Math.max(400, Math.floor(maxChars / Math.max(1, scored.length)));
-        return scored
-            .sort((a, b) => a.s.id - b.s.id)
-            .map(({ s }) => {
-                const body = s.body.length > perSection ? `${s.body.slice(0, perSection).trim()}…` : s.body;
-                return `### ${s.title}\n${body}`;
-            })
+    // Corta no fim de uma linha ou frase, nunca no meio de uma palavra
+    function trimAtBoundary(text, maxChars) {
+        if (text.length <= maxChars) return text;
+        const cut = text.slice(0, maxChars);
+        const at = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf('. '));
+        return `${(at > maxChars * 0.5 ? cut.slice(0, at + 1) : cut.slice(0, cut.lastIndexOf(' '))).trim()} […]`;
+    }
+
+    function formatExcerpts(sections, maxChars) {
+        const perSection = Math.max(400, Math.floor(maxChars / Math.max(1, sections.length)));
+        return sections
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .map(s => `### ${s.title}\n${trimAtBoundary(s.body, perSection)}`)
             .join('\n\n');
     }
+
+    // Busca os trechos originais do GDD mais relevantes para um texto (ex: título da feature)
+    function findRelevantExcerpts(sections, query, { maxChars = 3000, maxSections = 4 } = {}) {
+        const ranked = rankSections(sections, query).slice(0, maxSections).map(x => x.s);
+        return formatExcerpts(ranked, maxChars);
+    }
+
+    // Título da seção que mais fala de um texto (usado para registrar de onde veio cada feature)
+    function bestSectionTitle(sections, query) {
+        return rankSections(sections, query)[0]?.s.title || '';
+    }
+
 
     // ---------------- Documento de features ----------------
     // O documento é montado lendo o GDD bloco a bloco. A cada bloco a IA devolve
@@ -233,7 +256,7 @@
     }
 
     function createFeatureDoc() {
-        return { features: [] };
+        return { features: [], scopeNotes: [] };
     }
 
     function parseFeatureDocOps(md) {
@@ -241,6 +264,11 @@
         let current = null;
         for (const raw of String(md || '').split('\n')) {
             const line = raw.trim();
+            if (/^#{1,4}\s*ESCOPO\b/i.test(line)) {
+                current = { op: 'scope', details: [], content: [], dependsOn: [] };
+                ops.push(current);
+                continue;
+            }
             const novo = line.match(/^#{1,4}\s*NOVA\s*[:\-—]?\s*(.+)$/i);
             const upd = line.match(/^#{1,4}\s*(?:ATUALIZA|ADICIONA|COMPLEMENTA)\w*\s*[:\-—]?\s*(F\d+)\b\s*[:\-—]?\s*(.*)$/i);
             if (novo || upd) {
@@ -279,6 +307,7 @@
     }
 
     // Aplica as operações de um bloco ao documento (retorna um documento novo)
+    // source pode ser um texto ou uma função (op) => texto
     function applyFeatureDocOps(doc, ops, { source = '' } = {}) {
         const out = { features: (doc?.features || []).map(f => ({
             ...f,
@@ -286,12 +315,16 @@
             content: f.content.map(c => ({ ...c })),
             dependsOn: [...f.dependsOn],
             sources: [...f.sources],
-        })) };
+        })), scopeNotes: [...(doc?.scopeNotes || [])] };
         const byId = id => out.features.find(f => f.id === id);
         const byName = name => out.features.find(f => nameKey(f.name) === nameKey(name));
         let next = out.features.reduce((m, f) => Math.max(m, parseInt(f.id.slice(1), 10) || 0), 0);
 
         for (const op of ops || []) {
+            if (op.op === 'scope') {
+                op.details.forEach(d => pushUnique(out.scopeNotes, d));
+                continue;
+            }
             let feature = op.op === 'update' ? (byId(op.id) || (op.name && byName(op.name))) : byName(op.name);
             if (!feature) {
                 if (!op.name) continue; // atualização de uma feature que não existe e sem nome
@@ -318,7 +351,7 @@
                 }
             }
             op.dependsOn.forEach(d => pushUnique(feature.dependsOn, d));
-            pushUnique(feature.sources, source);
+            pushUnique(feature.sources, typeof source === 'function' ? source(op) : source);
         }
 
         // Dependências por nome viram IDs quando possível
@@ -375,6 +408,9 @@
             if (!features.length) continue;
             parts.push('', `## ${c.label}`, '');
             features.forEach(f => parts.push(formatFeatureSpec(f), ''));
+        }
+        if (doc?.scopeNotes?.length) {
+            parts.push('', '## Notas de escopo e cronograma do GDD', '', ...doc.scopeNotes.map(n => `- ${n}`));
         }
         return parts.join('\n').trim() + '\n';
     }
@@ -436,7 +472,8 @@
     function analyzeTaskGranularity(tasks, milestoneType, { maxHours = MAX_TASK_HOURS } = {}) {
         const target = TASK_TARGETS[milestoneType] || TASK_TARGETS.prototype;
         const oversized = (tasks || []).filter(t => (t.estimatedHours || 0) > maxHours);
-        const tooFew = (tasks || []).length < target.min;
+        // Só pede mais tarefas quando faltam muitas: completar contagem gera tarefa inventada
+        const tooFew = (tasks || []).length < Math.ceil(target.min / 2);
         return { oversized, tooFew, target, ok: !oversized.length && !tooFew };
     }
 
@@ -575,7 +612,10 @@
         tokenize,
         splitSections,
         chunkSections,
+        rankSections,
+        formatExcerpts,
         findRelevantExcerpts,
+        bestSectionTitle,
         normalizeCategory,
         createFeatureDoc,
         parseFeatureDocOps,
