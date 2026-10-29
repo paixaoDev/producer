@@ -3185,6 +3185,12 @@ function normalizeMilestoneSequence(milestones, totalMonths = 24) {
 
     // poc e prototype (MVP): duração vem de GddReader.VERSION_BUDGETS
     // demais fases: distribuídas entre o mês do prototype e o total
+    // Mês em que cada versão termina = soma do tamanho das versões até ela
+    const budgetMonth = type => {
+        const idx = GddReader.VERSION_ORDER.indexOf(type);
+        const weeks = GddReader.VERSION_ORDER.slice(0, idx + 1).reduce((t, k) => t + GddReader.VERSION_BUDGETS[k].weeks, 0);
+        return Math.round((weeks / 4.33) * 4) / 4;
+    };
     const getDefaultMonth = (type, total) => {
         if (type === 'poc')       return GddReader.VERSION_BUDGETS.poc.weeks / 4;   // PoC: 2 semanas
         if (type === 'prototype') return (GddReader.VERSION_BUDGETS.poc.weeks + GddReader.VERSION_BUDGETS.prototype.weeks) / 4; // MVP: 2 meses depois
@@ -3226,8 +3232,8 @@ function normalizeMilestoneSequence(milestones, totalMonths = 24) {
         const defaultMonth = getDefaultMonth(type, totalMonths || 24);
         // poc: sempre forçamos a duração da PoC, ignora o que a IA gerou
         // prototype (MVP): usa o valor da IA se gerou algo razoável, senão cai no padrão
-        const forceDefault = type === 'poc';
-        const raw = forceDefault ? defaultMonth : (existing.month || defaultMonth);
+        // As versões têm tamanho fixo: o mês de cada uma sai de VERSION_BUDGETS, não da IA
+        const raw = budgetMonth(type) || (existing.month || defaultMonth);
         const month = Math.min(totalMonths || 24, Math.max(lastMonth + 0.25, raw));
         lastMonth = month;
 
@@ -3263,6 +3269,11 @@ async function mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNorm
 
     // Detecta qual versão do fluxo gerou este MD
     const isV2 = consolidatedMD.includes('## MARCO:');
+    if (isV2) {
+        // No fluxo por versões, a duração é a soma do tamanho de cada versão (PoC 2 semanas, MVP 2 meses...)
+        const semanas = GddReader.VERSION_ORDER.reduce((t, type) => t + GddReader.VERSION_BUDGETS[type].weeks, 0);
+        overview.totalDurationMonths = Math.round(semanas / 4.33);
+    }
 
     const milestones = normalizeMilestoneSequence(
         parseMDMilestones(consolidatedMD),
@@ -3423,7 +3434,9 @@ function assignSprintPoints(objectives, totalMonths, skipLayout = false) {
             });
             kr.totalPoints  = (kr.tasks || []).reduce((s, t) => s + t.points, 0);
             kr.sprintCount  = Math.max(1, Math.ceil(kr.totalPoints / SPRINT_CAPACITY_POINTS));
-            kr.estimatedWeeks = kr.sprintCount * SPRINT_DURATION_WEEKS;
+            // Duração real da entrega (5 dias úteis por semana, mínimo 1 dia), não sprints inteiras:
+            // com tarefas de horas, arredondar cada entrega para 2 semanas inflava o cronograma
+            kr.estimatedWeeks = Math.max(0.2, Math.ceil(kr.totalPoints) / 5);
         });
 
         const totalWeeks   = (obj.keyResults || []).reduce((s, kr) => s + kr.estimatedWeeks, 0);
@@ -3603,7 +3616,7 @@ function scheduleRoadmap(objectives, teamConfig) {
 
     // ── Pass final: garante separação de fases no nível de meses ──
     // Necessário porque a resolução de semanas → meses pode colapsar fases adjacentes no mesmo mês.
-    // Regra: startMonth de QUALQUER objective da fase N > endMonth de QUALQUER objective da fase N-1.
+    // Regra: startMonth de QUALQUER objective da fase N >= endMonth de QUALQUER objective da fase N-1.
     const phaseEndMonths = {};
     for (const msType of MILESTONE_ORDER) {
         const objs = scheduled.filter(o => o.milestoneType === msType);
@@ -3617,8 +3630,9 @@ function scheduleRoadmap(objectives, teamConfig) {
         // Mês mais cedo de QUALQUER objective desta fase
         const phaseMinStart = Math.min(...objs.map(o => o.startMonth));
 
-        if (phaseMinStart <= prevPhaseEnd) {
-            const shift = prevPhaseEnd + 1 - phaseMinStart;
+        // Fases curtas (PoC de 2 semanas) podem terminar e começar no mesmo mês
+        if (phaseMinStart < prevPhaseEnd) {
+            const shift = prevPhaseEnd - phaseMinStart;
             // Desloca TODOS os objectives desta fase uniformemente
             objs.forEach(obj => {
                 obj.startMonth += shift;
@@ -4063,9 +4077,9 @@ async function generateEditalSummary(sprintResult, milestoneResult, genreCtx, ap
     const totalTasks = sprintResult.objectives.reduce((total, obj) =>
         total + (obj.keyResults || []).reduce((t, kr) => t + (kr.tasks || []).length, 0), 0);
 
-    const totalManDays = sprintResult.objectives.reduce((total, obj) =>
+    const totalManDays = Math.round(sprintResult.objectives.reduce((total, obj) =>
         total + (obj.keyResults || []).reduce((t, kr) =>
-            t + (kr.tasks || []).reduce((tt, task) => tt + (task.estimatedDays || 2), 0), 0), 0);
+            t + (kr.tasks || []).reduce((tt, task) => tt + taskHours(task) / HOURS_PER_ESTIMATED_DAY, 0), 0), 0));
 
     const milestonesSummary = (milestoneResult.milestones || [])
         .map(m => `  - Marco ${formatMilestoneMonth(m.month)}: "${m.title}" — ${m.description}`)
