@@ -21,6 +21,18 @@ const DEFAULT_HOURLY_RATES = {
     production:  110,
 };
 let hourlyRates = { ...DEFAULT_HOURLY_RATES };
+
+// Horas de uma tarefa. Tarefas novas vêm em horas; projetos antigos só têm dias.
+function taskHours(task) {
+    if (Number(task?.estimatedHours) > 0) return Number(task.estimatedHours);
+    return (Number(task?.estimatedDays) > 0 ? Number(task.estimatedDays) : 2) * HOURS_PER_ESTIMATED_DAY;
+}
+
+// Texto curto da estimativa: "2h" para tarefas em horas, "2d" para as antigas
+function formatTaskEstimate(task) {
+    if (Number(task?.estimatedHours) > 0) return `${formatNumberBR(task.estimatedHours, task.estimatedHours % 1 ? 1 : 0)}h`;
+    return `${task?.estimatedDays || 2}d`;
+}
 let workspaceScopeAreas = new Set();
 let workspaceScopeMilestones = new Set();
 
@@ -1453,7 +1465,8 @@ async function extractPDFText(file) {
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const content = await page.getTextContent();
-            const pageText = content.items.map(item => item.str).join(' ');
+            // hasEOL preserva as quebras de linha — sem isso títulos e listas viram um parágrafo só
+            const pageText = content.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('');
             texts.push(pageText);
         }
         const result = texts.join('\n\n');
@@ -1468,8 +1481,19 @@ async function extractPDFText(file) {
 }
 
 async function extractDOCXText(file) {
+    const arrayBuffer = await readAsArrayBuffer(file);
+
+    // DOCX é um ZIP comprimido: descompacta o word/document.xml de verdade e mantém os títulos
+    if (typeof GddReader !== 'undefined') {
+        try {
+            const text = await GddReader.extractDocxText(arrayBuffer);
+            if (text.trim()) return text;
+        } catch (e) {
+            console.warn('Leitura estruturada do DOCX falhou, tentando leitura simples:', e);
+        }
+    }
+
     try {
-        const arrayBuffer = await readAsArrayBuffer(file);
         // DOCX é um ZIP — extrai o word/document.xml e remove tags XML
         const uint8 = new Uint8Array(arrayBuffer);
         // Busca por "word/document.xml" dentro do ZIP
@@ -1617,24 +1641,35 @@ async function analyzeDocument() {
         setLoadingMessage('Lendo arquivo...');
         const fileContent = await readFileContent(currentFile);
 
-        const gddTexto = typeof fileContent === 'string'
-            ? fileContent.substring(0, 20000)
-            : '';
+        const textoCompleto = typeof fileContent === 'string' ? fileContent : '';
+        const gddTexto = textoCompleto.substring(0, GddReader.MAX_GDD_CHARS);
 
         if (!gddTexto.trim()) {
             throw new Error('Não foi possível extrair texto do arquivo. Tente salvar como .txt e envie novamente.');
+        }
+        if (textoCompleto.length > gddTexto.length) {
+            showNotification(`GDD muito longo: lendo os primeiros ${formatNumberBR(GddReader.MAX_GDD_CHARS)} caracteres.`, 'info');
         }
 
         // FASE 0: Normaliza o GDD para o template padrão
         setLoadingPhase(0, 'Normalizando GDD...');
         setLoadingMessage('Mapeando informações do seu jogo...');
         const gddNormalizado = await normalizarGDD(gddTexto, apiKey);
+        store.setProgress({ gddNormalizado, gddTexto });
+
+        // FASE 0b: Lê o GDD inteiro, bloco a bloco, montando o documento de features
+        const gddSections = GddReader.splitSections(gddTexto);
+        const documentoFeatures = await montarDocumentoFeatures(gddSections, gddNormalizado, apiKey,
+            (done, total, doc) => setLoadingMessage(`Lendo o GDD: bloco ${done}/${total} · ${GddReader.featureDocCount(doc)} features no documento...`)
+        );
+        appendGenerationLog('Documento de features', 'fas fa-list-check', GddReader.featureDocToMarkdown(documentoFeatures, gddNormalizado.titulo || 'Documento de features'));
 
         // Salva progresso após fase 0
-        store.setProgress({ gddNormalizado });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures });
+        const gddLeitura = { sections: gddSections, documento: documentoFeatures };
 
         // Pausa para revisão — mostra o GDD normalizado e aguarda confirmação do usuário
-        const confirmado = await mostrarRevisaoGDD(gddNormalizado);
+        const confirmado = await mostrarRevisaoGDD(gddNormalizado, documentoFeatures);
         if (!confirmado) {
             store.removeProgress();
             resetToUpload();
@@ -1654,9 +1689,9 @@ async function analyzeDocument() {
         setLoadingPhase(1, 'Definindo milestones e entregáveis por fase...');
 
         // NOVO FLUXO: Fase 1 → Milestones com entregáveis (sem tempo nas áreas)
-        const phase1md = await mdPhase1_Milestones(gddCompleto(gddNormalizado), genreCtx, apiKey);
+        const phase1md = await mdPhase1_Milestones(gddCompleto(gddNormalizado), genreCtx, apiKey, gddLeitura);
 
-        store.setProgress({ gddNormalizado, phase1md });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures, phase1md });
         appendGenerationLog('Milestones e Entregáveis', 'fas fa-flag-checkered', phase1md);
 
         // Extrai lista de milestones do MD
@@ -1670,39 +1705,44 @@ async function analyzeDocument() {
             },
             (ms, mdContent) => {
                 appendGenerationLog(`Features — ${ms.title}`, 'fas fa-file-search', mdContent);
-            }
+            },
+            gddLeitura
         );
 
-        store.setProgress({ gddNormalizado, phase1md, phase2mds });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures, phase1md, phase2mds });
 
-        // Extrai lista plana de features com milestone de origem
-        const featureList = extractFeaturesFromMDs(phase2mds, milestoneList);
+        // Extrai lista plana de features com milestone de origem.
+        // Features do documento que nenhuma versão pegou entram no Alpha.
+        const featureList = garantirCoberturaDocumento(extractFeaturesFromMDs(phase2mds, milestoneList), documentoFeatures, milestoneList);
         setLoadingPhase(3, `Criando tasks de sprint para ${featureList.length} features...`);
 
-        // NOVO FLUXO: Fase 3 → Tasks de sprint por feature (1-2 dias cada)
+        // NOVO FLUXO: Fase 3 → Tasks de sprint por feature (1-4 horas cada, várias por dia)
         const phase3mds = await mdPhase3_Tasks(featureList, genreCtx, gddNormalizado, apiKey,
             (done, total) => {
                 setLoadingMessage(`Tasks: ${done}/${total} features...`);
             },
             (ft, mdContent) => {
                 appendGenerationLog(`Tasks — [${ft.area}] ${ft.title}`, 'fas fa-tasks', mdContent);
-            }
+            },
+            gddLeitura
         );
 
-        store.setProgress({ gddNormalizado, phase1md, phase2mds, phase3mds });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures, phase1md, phase2mds, phase3mds });
 
         setLoadingPhase(4, 'Consolidando cronograma...');
 
         // Fase 4 vira uma síntese de visão geral (não precisa de chamada extra de milestones)
         const phase4md = phase1md; // milestones já foram definidos na Fase 1
 
-        store.setProgress({ gddNormalizado, phase1md, phase2mds, phase3mds, phase4md });
+        store.setProgress({ gddNormalizado, gddTexto, documentoFeatures, phase1md, phase2mds, phase3mds, phase4md });
 
         setLoadingPhase(5, 'Consolidando em roadmap final...');
 
         // FASE FINAL: MD → JSON (adaptado ao novo formato)
         const consolidatedMD = buildConsolidatedMD_v2(phase1md, milestoneList, featureList, phase3mds);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
+        analysisResult.documentoFeatures = documentoFeatures;
+        appendGenerationLog('Tamanho de cada versão', 'fas fa-ruler', relatorioVersoesTexto(relatorioVersoes(analysisResult.objectives, gddNormalizado.tamanho_equipe), gddNormalizado.tamanho_equipe));
         resetWorkspaceScopeState();
 
         // Geração concluída — limpa o cache de progresso
@@ -1741,6 +1781,20 @@ async function resumeAnalysis() {
     const { gddNormalizado } = progress;
 
     try {
+        // Reconstrói a leitura detalhada do GDD (projetos antigos não têm o texto salvo)
+        const gddTexto = progress.gddTexto || '';
+        const gddSections = GddReader.splitSections(gddTexto);
+        let documentoFeatures = progress.documentoFeatures;
+        if (!documentoFeatures && gddSections.length) {
+            setLoadingPhase(0, 'Lendo o GDD e montando o documento de features...');
+            documentoFeatures = await montarDocumentoFeatures(gddSections, gddNormalizado, apiKey,
+                (done, total, doc) => setLoadingMessage(`Lendo o GDD: bloco ${done}/${total} · ${GddReader.featureDocCount(doc)} features no documento...`)
+            );
+            store.setProgress({ ...store.getProgress(), documentoFeatures });
+        }
+        documentoFeatures = documentoFeatures || GddReader.createFeatureDoc();
+        const gddLeitura = { sections: gddSections, documento: documentoFeatures };
+
         // Detecta gênero
         const detectedGenre = detectGameGenre(
             `${gddNormalizado.genero} ${gddNormalizado.mecanica_principal} ${gddNormalizado.sinopse}`.substring(0, 3000)
@@ -1751,7 +1805,7 @@ async function resumeAnalysis() {
         let phase1md = progress.phase1md;
         if (!phase1md) {
             setLoadingPhase(1, 'Definindo milestones e entregáveis por fase...');
-            phase1md = await mdPhase1_Milestones(gddCompleto(gddNormalizado), genreCtx, apiKey);
+            phase1md = await mdPhase1_Milestones(gddCompleto(gddNormalizado), genreCtx, apiKey, gddLeitura);
             store.setProgress({ ...store.getProgress(), phase1md });
         }
         appendGenerationLog('Milestones e Entregáveis', 'fas fa-flag-checkered', phase1md);
@@ -1764,7 +1818,8 @@ async function resumeAnalysis() {
             setLoadingPhase(2, `Mapeando features para ${milestoneList.length} marcos...`);
             phase2mds = await mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey,
                 (done, total) => { setLoadingMessage(`Features: ${done}/${total} marcos...`); },
-                (ms, mdContent) => { appendGenerationLog(`Features — ${ms.title}`, 'fas fa-file-search', mdContent); }
+                (ms, mdContent) => { appendGenerationLog(`Features — ${ms.title}`, 'fas fa-file-search', mdContent); },
+                gddLeitura
             );
             store.setProgress({ ...store.getProgress(), phase2mds });
         } else {
@@ -1775,13 +1830,14 @@ async function resumeAnalysis() {
         }
 
         // Reconstrói phase3mds — ou usa o salvo
-        const featureList = extractFeaturesFromMDs(phase2mds, milestoneList);
+        const featureList = garantirCoberturaDocumento(extractFeaturesFromMDs(phase2mds, milestoneList), documentoFeatures, milestoneList);
         let phase3mds = progress.phase3mds;
         if (!phase3mds) {
             setLoadingPhase(3, `Criando tasks para ${featureList.length} features...`);
             phase3mds = await mdPhase3_Tasks(featureList, genreCtx, gddNormalizado, apiKey,
                 (done, total) => { setLoadingMessage(`Tasks: ${done}/${total} features...`); },
-                (ft, mdContent) => { appendGenerationLog(`Tasks — [${ft.area}] ${ft.title}`, 'fas fa-tasks', mdContent); }
+                (ft, mdContent) => { appendGenerationLog(`Tasks — [${ft.area}] ${ft.title}`, 'fas fa-tasks', mdContent); },
+                gddLeitura
             );
             store.setProgress({ ...store.getProgress(), phase3mds });
         } else {
@@ -1794,6 +1850,7 @@ async function resumeAnalysis() {
         setLoadingPhase(5, 'Consolidando em roadmap final...');
         const consolidatedMD = buildConsolidatedMD_v2(phase1md, milestoneList, featureList, phase3mds);
         analysisResult = await mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNormalizado);
+        analysisResult.documentoFeatures = documentoFeatures;
         resetWorkspaceScopeState();
 
         store.removeProgress();
@@ -1851,7 +1908,7 @@ const GDD_FIELD_LABELS = {
 };
 
 // Mostra a tela de revisão e retorna uma Promise que resolve com true (confirmar) ou false (cancelar)
-function mostrarRevisaoGDD(gddNormalizado) {
+function mostrarRevisaoGDD(gddNormalizado, documentoFeatures = GddReader.createFeatureDoc()) {
     return new Promise((resolve) => {
         // Esconde loading, mostra review
         document.getElementById('loadingSection').style.display = 'none';
@@ -1887,6 +1944,31 @@ function mostrarRevisaoGDD(gddNormalizado) {
             grid.appendChild(div);
         }
 
+        // Documento de features: o que a IA encontrou no GDD (cada feature vira tarefas)
+        const totalFeatures = GddReader.featureDocCount(documentoFeatures);
+        if (totalFeatures > 0) {
+            const div = document.createElement('div');
+            div.className = 'review-group';
+            div.innerHTML = `
+                <div class="review-group-title">
+                    <i class="fas fa-list-check"></i> Documento de features (${totalFeatures})
+                    <a href="#" class="review-download-link" style="margin-left:auto;font-size:0.85em;">Baixar .md</a>
+                </div>
+                ${GddReader.FEATURE_CATEGORIES
+                    .map(c => ({ c, features: documentoFeatures.features.filter(f => f.category === c.key) }))
+                    .filter(g => g.features.length)
+                    .map(({ c, features }) => `<div class="review-item">
+                        <div class="review-item-label">${escapeHtml(c.label)} (${features.length})</div>
+                        <div class="review-item-value">${features.map(f => `<span title="${escapeHtml(f.summary || '')}">${escapeHtml(f.name)}</span>`).join(', ')}</div>
+                    </div>`).join('')}
+            `;
+            div.querySelector('.review-download-link').onclick = (e) => {
+                e.preventDefault();
+                baixarDocumentoFeatures(documentoFeatures, gddNormalizado.titulo);
+            };
+            grid.appendChild(div);
+        }
+
         // Botões
         document.getElementById('reviewConfirmBtn').onclick = () => {
             reviewSection.style.display = 'none';
@@ -1898,6 +1980,9 @@ function mostrarRevisaoGDD(gddNormalizado) {
         };
     });
 }
+
+// Quanto do GDD o normalizador lê de uma vez. O restante é coberto pelo documento de features (lido em blocos).
+const GDD_NORMALIZE_CHARS = 60000;
 
 async function normalizarGDD(gddTexto, apiKey) {
     const camposExplicados = Object.keys(GDD_TEMPLATE).map(k => {
@@ -1955,13 +2040,13 @@ REGRAS IMPORTANTES:
 - Para personagens_principais e ambientes_principais: liste TODOS mencionados no GDD, com seus nomes reais.
 - Para sistema_finais: descreva cada final e suas condições específicas.
 - Para perspectiva e estilo_visual: OBRIGATÓRIO identificar se o jogo é 2D ou 3D. Procure pistas em campos como "Gráficos", "Engine", referências de jogos (ex: Mario Odyssey = 3D, Hollow Knight = 2D) e descrições do cenário. Em caso de dúvida, prefira 3D se houver qualquer menção a espaço tridimensional, cenário 3D ou engine com suporte 3D.
-- Cada campo pode ter até 3 linhas se necessário para capturar detalhes importantes.
+- Cada campo é um texto (string JSON, nunca lista ou objeto) e pode ser longo para não perder detalhes importantes.
 
 CAMPOS A PREENCHER:
 ${camposExplicados}
 
 GDD:
-${gddTexto}
+${gddTexto.substring(0, GDD_NORMALIZE_CHARS)}
 
 Retorne APENAS um objeto JSON válido com todos os campos acima. Sem texto antes ou depois. Exemplo:
 {
@@ -2017,6 +2102,134 @@ function sanitizarGDD(obj) {
 }
 
 // ============================================================
+// DOCUMENTO DE FEATURES — leitura incremental do GDD
+// O GDD é lido bloco a bloco. A cada bloco a IA vê o índice das
+// features que já estão no documento e responde só com o que é
+// novo: features novas (## NOVA) ou complementos de features que já
+// existem (## ATUALIZA F03). O código junta tudo, então nada que foi
+// lido antes se perde. O documento não tem versão (PoC, demo...):
+// cada versão do jogo escolhe depois o que entra dela.
+// ============================================================
+async function montarDocumentoFeatures(gddSections, gddNormalizado, apiKey, onProgress) {
+    const chunks = GddReader.chunkSections(gddSections, GddReader.CHUNK_CHARS);
+    const categorias = GddReader.FEATURE_CATEGORIES.map(c => `${c.key} (${c.label})`).join(' | ');
+    let doc = GddReader.createFeatureDoc();
+
+    for (let i = 0; i < chunks.length; i++) {
+        const secoesDoBloco = GddReader.splitSections(chunks[i]);
+        const titulos = secoesDoBloco.map(sec => sec.title).join(' | ');
+        // Cada feature registra a seção do bloco que mais fala dela (não o bloco inteiro)
+        const origem = op => GddReader.bestSectionTitle(secoesDoBloco, [op.name, op.summary, ...op.details].join(' '))
+            || secoesDoBloco[0]?.title || `parte ${i + 1}`;
+        const indice = GddReader.formatFeatureIndex(doc, { maxChars: 9000 });
+        const prompt = `Você é um produtor de jogos lendo o GDD de "${gddNormalizado?.titulo || 'um jogo'}" para montar o DOCUMENTO DE FEATURES do projeto.
+O GDD está sendo lido em partes. Esta é a parte ${i + 1} de ${chunks.length}.
+
+Uma feature é algo do jogo que precisa ser construído: uma mecânica, um sistema, um personagem, um inimigo/boss, uma fase, um item, uma tela, uma cena, uma trilha, um requisito técnico.
+O documento NÃO tem versões (PoC, demo, alpha...). Descreva a feature completa como o GDD descreve.
+
+FEATURES QUE JÁ ESTÃO NO DOCUMENTO:
+${indice || '(nenhuma ainda — esta é a primeira parte)'}
+
+O QUE FAZER COM ESTA PARTE DO GDD:
+- Se a parte fala de algo que JÁ está no documento, use "## ATUALIZA Fxx" e escreva só o que é NOVO (regras, números, estados, variações, conteúdo).
+- Se fala de algo que ainda não está no documento, use "## NOVA: Nome".
+- Não repita o que já está no índice. Se a parte não traz nada novo sobre uma feature, não a mencione.
+- Um boss, uma fase, um inimigo ou um personagem com comportamento ou arte próprios é uma feature própria. Itens simples de uma lista (ex: 12 armas parecidas, 40 coletáveis iguais) podem ser "conteudo" de uma feature.
+- Use APENAS o que está escrito. Preserve os nomes próprios exatamente.
+- Detalhes devem ser concretos: inputs, regras, números, estados, animações, condições, quantidades.
+- Prazos, cronograma, tamanho de equipe e pedidos de versão (ex: "queremos uma demo com X") NÃO são features: coloque-os num bloco "## ESCOPO", um por linha.
+- Em "depende de", use o Fxx de features que já estão no índice ou o NOME de uma feature nova desta mesma resposta.
+
+FORMATO:
+## NOVA: Nome da feature
+- categoria: uma de ${categorias}
+- resumo: uma frase sobre o que é
+- detalhe: uma regra ou fato concreto (uma linha por detalhe)
+- conteudo: nome de um item/variação a produzir :: o que ele tem de específico
+- depende de: Fxx ou Nome (se depende de outra feature)
+
+## ATUALIZA F03
+- detalhe: o que esta parte acrescenta
+- conteudo: item novo :: detalhe
+
+## ESCOPO
+- detalhe: prazo, cronograma ou pedido de versão citado nesta parte
+
+PARTE ${i + 1} DO GDD${titulos ? ` (seções: ${titulos})` : ''}:
+${chunks[i]}
+
+Retorne APENAS o Markdown com as operações, sem texto antes ou depois.`;
+
+        try {
+            const md = await callAIAPI(prompt, apiKey);
+            doc = GddReader.applyFeatureDocOps(doc, GddReader.parseFeatureDocOps(md), { source: origem });
+        } catch (e) {
+            console.warn(`Erro ao ler a parte ${i + 1} do GDD:`, e);
+        }
+        if (onProgress) onProgress(i + 1, chunks.length, doc);
+        if (i < chunks.length - 1) await sleep(600);
+    }
+
+    return doc;
+}
+
+function baixarDocumentoFeatures(documentoFeatures = analysisResult?.documentoFeatures, titulo = analysisResult?.overview?.title) {
+    if (!GddReader.featureDocCount(documentoFeatures)) {
+        showNotification('Este projeto não tem documento de features. Gere o roadmap novamente para criá-lo.', 'info');
+        return;
+    }
+    const md = GddReader.featureDocToMarkdown(documentoFeatures, titulo ? `${titulo} — Documento de features` : 'Documento de features');
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(titulo || 'gdd').toLowerCase().replace(/[^a-z0-9]+/gi, '-')}-features.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Contexto para quebrar uma feature em tarefas: a especificação das features
+// do documento que ela referencia + trechos originais do GDD como apoio
+function contextoGDDParaFeature(gddLeitura, ft) {
+    if (!gddLeitura) return { especificacao: '', trechos: '' };
+    const docFeatures = gddLeitura.documento?.features || [];
+    const referenciadas = (ft.refs || []).map(id => docFeatures.find(f => f.id === id)).filter(Boolean);
+    const especificacao = referenciadas.map(GddReader.formatFeatureSpec).join('\n\n');
+    // Com especificação, os trechos de apoio vêm só das seções de onde a feature saiu
+    const origens = new Set(referenciadas.flatMap(f => f.sources));
+    const secoes = origens.size
+        ? (gddLeitura.sections || []).filter(sec => origens.has(sec.title))
+        : (gddLeitura.sections || []);
+    const trechos = GddReader.findRelevantExcerpts(secoes, `${ft.title} ${ft.description}`,
+        { maxChars: especificacao ? 1500 : 3500, maxSections: especificacao ? 2 : 4 });
+    return { especificacao, trechos };
+}
+
+// Toda feature do documento precisa entrar em alguma versão. As que nenhuma
+// versão pegou entram no Alpha (a versão em que o conteúdo fica completo).
+function garantirCoberturaDocumento(featureList, documentoFeatures, milestoneList) {
+    const usadas = new Set(featureList.flatMap(ft => ft.refs || []));
+    const alvo = milestoneList.find(m => m.type === 'alpha') || milestoneList[milestoneList.length - 1];
+    if (!alvo) return featureList;
+    const extras = (documentoFeatures?.features || [])
+        .filter(f => !usadas.has(f.id))
+        .map((f, i) => ({
+            id: `ft_${alvo.type}_doc_${i}`,
+            title: f.name,
+            area: (GddReader.FEATURE_CATEGORIES.find(c => c.key === f.category)?.areas || ['programming'])[0],
+            description: f.summary || f.details[0] || '',
+            refs: [f.id],
+            milestoneId: alvo.id,
+            milestoneType: alvo.type,
+            milestoneTitle: alvo.title,
+        }));
+    return featureList.concat(extras);
+}
+
+// ============================================================
 // NOVO FLUXO v2: GDD → Milestones → Features → Tasks → Cronograma
 // Regra: tempo NUNCA é atribuído pela IA às áreas diretamente.
 // O cronograma é DERIVADO da quantidade real de tasks geradas.
@@ -2024,7 +2237,8 @@ function sanitizarGDD(obj) {
 
 // FASE 1 (v2): GDD → Milestones com entregáveis por fase
 // Sem período por área. A IA só define O QUE entra em cada fase.
-async function mdPhase1_Milestones(gddText, genreCtx, apiKey) {
+async function mdPhase1_Milestones(gddText, genreCtx, apiKey, gddLeitura = null) {
+    const indiceFeatures = gddLeitura ? GddReader.formatFeatureIndex(gddLeitura.documento, { maxChars: 6000 }) : '';
     const prompt = `Você é um produtor de jogos sênior. Analise o GDD abaixo e defina os 8 marcos (milestones) do projeto com seus entregáveis e critérios de aceite.
 
 Gênero: ${genreCtx.label}
@@ -2058,7 +2272,15 @@ NUNCA crie uma PoC que só valida o controle/input isolado. A PoC valida o LOOP 
 
 GDD DO PROJETO:
 ${gddText}
-
+${indiceFeatures ? `
+DOCUMENTO DE FEATURES (tudo que o GDD pede para construir). Cada marco é uma VERSÃO do jogo: escolha quais features
+(e qual parte de cada uma) entram em cada versão. Toda feature precisa entrar em alguma versão até o Alpha
+(cite os Fxx em "O que deve existir"):
+${indiceFeatures}
+` : ''}${gddLeitura?.documento?.scopeNotes?.length ? `
+PEDIDOS DE ESCOPO E CRONOGRAMA DO GDD (respeite-os):
+${gddLeitura.documento.scopeNotes.map(n => `- ${n}`).join('\n')}
+` : ''}
 Retorne APENAS o Markdown abaixo, sem texto antes ou depois:
 
 # VISÃO GERAL
@@ -2075,12 +2297,12 @@ Retorne APENAS o Markdown abaixo, sem texto antes ou depois:
 ## Marco 1: PoC — [nome específico do jogo]
 - Tipo: poc
 - Prova de Conceito: [descreva em 1-2 frases o que o jogador consegue FAZER nessa PoC — o loop mínimo jogável de ponta a ponta]
-- O que deve existir: [liste apenas o que é necessário para o loop mínimo funcionar — tudo cru, sem arte, sem som, 7 dias]
+- O que deve existir: [liste apenas o que é necessário para o loop mínimo funcionar — tudo cru, sem arte, sem som, cabe em ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.poc.weeks)}]
 - O que NÃO deve existir: [arte final, som, menus, save/load, conteúdo além do mínimo]
 - Critérios de aceite: [como saber que está pronto — foco no loop funcionando]
 - Áreas envolvidas: programming | design
 
-## Marco 2: Prototipo — [nome específico]
+## Marco 2: MVP — [nome específico]
 - Tipo: prototype
 - O que deve existir: [liste apenas o que sustenta o loop de diversão — sem infraestrutura, sem conteúdo completo]
 - Critérios de aceite: [jogador joga e quer continuar]
@@ -2176,12 +2398,26 @@ function extractMilestonesFromMD(md) {
 }
 
 // FASE 2 (v2): Para cada milestone → features organizadas por área (sem período)
-async function mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey, onProgress, onLog) {
+async function mdPhase2_Features(milestoneList, genreCtx, gddNormalizado, apiKey, onProgress, onLog, gddLeitura = null) {
     const results = {};
+    const docFeatures = gddLeitura?.documento?.features || [];
+    const equipe = GddReader.parseTeamSize(gddNormalizado.tamanho_equipe);
+    const notasEscopo = (gddLeitura?.documento?.scopeNotes || []).map(n => `- ${n}`).join('\n');
+    // O que já foi planejado de cada feature do documento nas versões anteriores (id → ["PoC: Dash cru", ...])
+    const jaPlanejadas = new Map();
 
     for (let i = 0; i < milestoneList.length; i++) {
         const ms = milestoneList[i];
         const gddCtx = gddCompleto(gddNormalizado);
+        const indiceFeatures = docFeatures.length
+            ? docFeatures.map(f => {
+                const feito = jaPlanejadas.get(f.id);
+                return `${f.id} [${f.category}] ${f.name}${f.summary ? ` — ${f.summary}` : ''}${feito ? `\n    já planejado: ${feito.join('; ')}` : ''}`;
+            }).join('\n').slice(0, 12000)
+            : '';
+        const trechos = gddLeitura && !docFeatures.length
+            ? GddReader.findRelevantExcerpts(gddLeitura.sections || [], `${ms.title} ${ms.whatExists.join(' ')}`, { maxChars: 4000 })
+            : '';
 
         const prompt = `Você é um produtor de jogos sênior especialista em ${genreCtx.label}.
 
@@ -2189,38 +2425,59 @@ Projeto: ${gddNormalizado.titulo || 'jogo'} | Engine: ${gddNormalizado.engine ||
 
 ${roadmapPhaseContractText()}
 
-GDD DO PROJETO:
-${gddCtx.substring(0, 3000)}
-
-MARCO: ${ms.title}
+GDD DO PROJETO (resumo):
+${gddCtx.substring(0, 8000)}
+${indiceFeatures ? `
+DOCUMENTO DE FEATURES DO JOGO (tudo que o GDD pede para construir — sem versão).
+"já planejado" mostra as entregas dessa feature em versões anteriores: planeje só o que falta.
+${indiceFeatures}
+` : ''}${notasEscopo ? `
+PEDIDOS DE ESCOPO E CRONOGRAMA DO GDD (respeite-os ao escolher o que entra em cada versão):
+${notasEscopo}
+` : ''}${trechos ? `
+TRECHOS ORIGINAIS DO GDD RELEVANTES PARA ESTE MARCO:
+${trechos}
+` : ''}
+VERSÃO DO JOGO (marco): ${ms.title}
 Tipo: ${ms.type}
-O que deve existir neste marco: ${ms.whatExists.join(' | ')}
+O que deve existir nesta versão: ${ms.whatExists.join(' | ')}
 Áreas envolvidas: ${ms.areas.join(', ')}
 
-Liste as features concretas que precisam ser desenvolvidas para que este marco seja atingido.
+Cada marco é uma VERSÃO jogável do jogo (PoC, MVP, demo, vertical slice, alpha...).
+TAMANHO DESTA VERSÃO: ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS[ms.type]?.weeks || 4)} de calendário, equipe de ${equipe} pessoa(s) ≈ ${formatNumberBR(GddReader.versionBudgetHours(ms.type, equipe))} horas de trabalho.
+Cada entrega costuma virar de 10 a 40 horas de tarefas de 1-4h. O TAMANHO EM HORAS É O LIMITE PRINCIPAL: escolha entregas que somadas caibam nele.
+O que é essencial para esta versão entra; o que não cabe fica para a versão seguinte (nada é descartado, só adiado).
+${docFeatures.length
+    ? `Escolha no documento as features que entram nesta versão e diga, para cada área, QUAL PARTE da feature é feita nesta versão.
+Cada entrega referencia a feature do documento com [ref: Fxx]. Uma mesma feature do documento pode aparecer em várias versões, cada vez com uma parte diferente
+(ex: PoC = versão crua do Dash; Vertical Slice = animação e som finais do Dash).`
+    : 'Liste as features concretas que precisam ser desenvolvidas para que esta versão exista.'}
 
 REGRAS GERAIS:
 - Use nomes reais do GDD (personagens, mecânicas, ambientes)
 - Área é apenas um label (programming, art, design, audio, qa, production) — NÃO define tempo
-- Cada feature é um objetivo verificável, independente
+- Cada feature é um objetivo verificável, independente, com UMA área só
+- Feature pequena e focada: se ela mistura sistema + conteúdo, ou programação + arte, divida em duas
+- Conteúdo do documento NÃO é agrupado: cada boss, fase, personagem ou tela relevante para o marco vira sua própria feature
+  (ex: "Boss Fulano — comportamento" [programming] e "Boss Fulano — sprite e animações" [art], em vez de "Implementar bosses")
 - Respeite estritamente o escopo do marco (não coloque no poc o que é do alpha)
-- Quantidade de features por marco (siga esses limites):
-  poc: 4-6 features (loop mínimo completo — ação + reação + condição de fim)
-  prototype: 6-10 features (loop de diversão + principal antagonista/desafio real + arte de ambiente + HUD)
-  demo: 5-8 features (sequência início-meio-fim, polimento suficiente para evento)
-  vertical_slice: 6-10 features (infraestrutura: save/load, menus, qualidade de lançamento)
-  alpha: 8-12 features (todos os sistemas, todo o conteúdo principal completo)
-  beta: 5-8 features (balanceamento, QA, localização, performance)
-  gold: 4-6 features (certificação, build master, zero bugs críticos)
-  release: 4-6 features (publicação, loja, monitoramento)
-- NUNCA repita features que são do marco anterior — cada marco adiciona algo novo
+- Quantidade de features por marco (referência; o tamanho em horas da versão manda):
+  poc: 4-8 features (loop mínimo completo — ação + reação + condição de fim)
+  prototype: 8-14 features (loop de diversão + principal antagonista/desafio real + arte de ambiente + HUD)
+  demo: 6-12 features (sequência início-meio-fim, polimento suficiente para evento)
+  vertical_slice: 8-14 features (infraestrutura: save/load, menus, qualidade de lançamento)
+  alpha: 10-30 features (todos os sistemas, todo o conteúdo principal completo — toda feature do documento que ainda não foi planejada entra aqui)
+  beta: 6-10 features (balanceamento, QA, localização, performance)
+  gold: 4-8 features (certificação, build master, zero bugs críticos)
+  release: 4-8 features (publicação, loja, monitoramento)
+- NUNCA repita o que já foi planejado em versão anterior — cada versão adiciona algo novo
 - Priorize SISTEMAS antes de CONTEÚDO: o sistema precisa existir antes de criar instâncias dele
   (ex: sistema de IA de inimigo → depois criar inimigos específicos; sistema de diálogo → depois criar diálogos)
 - O Prototype DEVE incluir o principal antagonista/obstáculo/desafio do jogo com comportamento real,
   não apenas o sistema de controle do jogador
 
 REGRAS ESPECÍFICAS POR TIPO DE MARCO:
-${ms.type === 'poc' ? `POC (7 dias — loop mínimo completo):
+${ms.type === 'poc' ? `POC (${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.poc.weeks)} — loop mínimo completo):
 - OBRIGATÓRIO: o jogador executa a ação principal → algo reage → existe condição de fim.
   Exemplos: boss atira de volta | plataforma colide | puzzle detecta vitória | inimigo persegue | turno do oponente
 - NUNCA inclua: arte final, cenário detalhado, áudio, UI polida, save/load, menus, conteúdo além do mínimo
@@ -2256,14 +2513,21 @@ ${ms.type === 'release' ? `RELEASE (publicação e suporte):
 Retorne APENAS o Markdown:
 
 ## ${ms.title}
-### [area: programming] Feature 1: [nome concreto]
-- Descrição: [o que é, o que entrega, como verificar]
+### [area: ${ms.areas[0] || 'programming'}] [ref: F01] Feature 1: [nome concreto — a parte da feature feita nesta versão]
+- Descrição: [o que entrega nesta versão, como verificar — cite as regras/números do documento]
 
-### [area: art] Feature 2: [nome concreto]
-- Descrição: [o que é, o que entrega, como verificar]`;
+### [area: uma das áreas envolvidas] [ref: F01, F04] Feature 2: [nome concreto]
+- Descrição: [o que entrega nesta versão, como verificar — cite as regras/números do documento]`;
 
         try {
             results[ms.id] = await callAIAPI(prompt, apiKey);
+            for (const line of results[ms.id].split('\n').filter(l => /^###\s/.test(l))) {
+                const titulo = line.replace(/^###\s*/, '').replace(/\[[^\]]*\]\s*:?\s*/g, '').replace(/^Feature\s+\d+:\s*/i, '').trim();
+                GddReader.findFeatureRefs(line).forEach(id => {
+                    if (!jaPlanejadas.has(id)) jaPlanejadas.set(id, []);
+                    jaPlanejadas.get(id).push(`${GddReader.VERSION_BUDGETS[ms.type]?.label || ms.type}: ${titulo}`);
+                });
+            }
         } catch (e) {
             console.warn(`Erro features ${ms.title}:`, e);
             results[ms.id] = `## ${ms.title}\n### [area: programming] Feature: [erro]\n- Descrição: Erro ao gerar features para este marco.`;
@@ -2291,8 +2555,10 @@ function extractFeaturesFromMDs(phase2mds, milestoneList) {
 
             const header = lines[0];
             const areaMatch = header.match(/\[area:\s*([^\]]+)\]/i);
+            const refs = GddReader.findFeatureRefs(header);
             const titleMatch = header
                 .replace(/\[area:[^\]]+\]\s*:?\s*/i, '')
+                .replace(/\[ref:[^\]]+\]\s*:?\s*/i, '')
                 .replace(/^Feature\s+\d+:\s*/i, '')
                 .replace(/^:\s*/, '')
                 .trim();
@@ -2304,6 +2570,7 @@ function extractFeaturesFromMDs(phase2mds, milestoneList) {
                 title: titleMatch,
                 area: areaMatch ? areaMatch[1].trim().toLowerCase() : 'programming',
                 description: desc,
+                refs,
                 milestoneId: ms.id,
                 milestoneType: ms.type,
                 milestoneTitle: ms.title,
@@ -2314,72 +2581,79 @@ function extractFeaturesFromMDs(phase2mds, milestoneList) {
     return features;
 }
 
-// FASE 3 (v2): Para cada feature → tasks de sprint (1-2 dias cada)
-async function mdPhase3_Tasks(featureList, genreCtx, gddNormalizado, apiKey, onProgress, onLog) {
+// FASE 3 (v2): Para cada feature → tasks pequenas (1-4 horas cada, várias por dia)
+// Tarefas pequenas deixam a pessoa fechar várias por dia e mostram progresso real.
+async function mdPhase3_Tasks(featureList, genreCtx, gddNormalizado, apiKey, onProgress, onLog, gddLeitura = null) {
     const results = {};
 
     for (let i = 0; i < featureList.length; i++) {
         const ft = featureList[i];
+        const target = GddReader.TASK_TARGETS[ft.milestoneType] || GddReader.TASK_TARGETS.prototype;
 
         // Pipeline hint da área
         const areaPipeline = AREA_PIPELINES[ft.area];
         let sprintExamples = '';
         if (areaPipeline) {
             const examples = areaPipeline.phases.flatMap(p => p.sprint_examples || []).slice(0, 5);
-            if (examples.length) sprintExamples = `Exemplos de tasks reais:\n${examples.map(e => `- ${e}`).join('\n')}`;
+            if (examples.length) sprintExamples = `Exemplos de entregas reais da área (quebre-as em passos menores):\n${examples.map(e => `- ${e}`).join('\n')}`;
         }
 
         const gddCtx = gddSecoesPorArea(gddNormalizado, ft.area);
+        const { especificacao, trechos } = contextoGDDParaFeature(gddLeitura, ft);
         const prompt = `Você é um produtor de jogos sênior, área ${ft.area}, projeto ${gddNormalizado.titulo || 'jogo'}.
 
 ${roadmapPhaseContractText()}
 
 GDD relevante para ${ft.area}:
 ${gddCtx}
-
+${especificacao ? `
+ESPECIFICAÇÃO DA FEATURE NO DOCUMENTO DE FEATURES (fonte principal — tudo que foi encontrado no GDD sobre ela):
+${especificacao}
+` : ''}${trechos ? `
+TRECHOS ORIGINAIS DO GDD (apoio):
+${trechos}
+` : ''}
 ${sprintExamples}
 
-FEATURE: ${ft.title}
-Marco: ${ft.milestoneTitle} (${ft.milestoneType})
+ENTREGA: ${ft.title}
+Versão do jogo: ${ft.milestoneTitle} (${ft.milestoneType}) — quebre apenas a parte que pertence a esta versão
 Descrição: ${ft.description}
 
-Crie as tasks de sprint que implementam essa feature. Cada task = 1 ou 2 dias de trabalho de 1 pessoa.
+Quebre essa feature em tarefas PEQUENAS, que uma pessoa termina em 1 a ${GddReader.MAX_TASK_HOURS} horas. A ideia é a pessoa conseguir fechar várias tarefas no mesmo dia.
 
-FORMATO: título >> descrição técnica | Nd | prioridade | tipo
+FORMATO (uma tarefa por linha):
+- [ ] Título >> o que fazer, com ferramenta/parâmetro | Nh | prioridade | tipo | pronto quando: critério verificável
 
-Regras:
-- Verbos no título: Implementar, Modelar, Texturizar, Rigar, Animar, Testar, Compor, Projetar, Revisar, Integrar, Configurar, Balancear, Documentar
-- Descrição: ferramenta ou engine usada, parâmetro técnico, entregável concreto verificável
+REGRAS DE TAMANHO:
+- Estimativa em HORAS: 1h, 2h, 3h ou ${GddReader.MAX_TASK_HOURS}h. Nunca mais que ${GddReader.MAX_TASK_HOURS}h. Prefira 1-2h.
+- Se algo levaria mais de ${GddReader.MAX_TASK_HOURS}h, divida em passos: estrutura → cada estado/variação → integração → ajuste → teste.
+- Uma tarefa = UM entregável. Se o título precisa de "e" para juntar duas coisas, são duas tarefas.
+- Cada estado, animação, variação, tela de interface (menu/HUD), inimigo ou fase citado no GDD é uma tarefa separada.
+- Quantidade de referência: ${target.min} a ${target.max} tarefas (marco ${ft.milestoneType}). Entrega pequena pode ter menos: NÃO invente tarefas para completar o número.
+
+REGRAS DE CONTEÚDO:
+- Verbo no início do título: Implementar, Criar, Modelar, Texturizar, Rigar, Animar, Testar, Compor, Projetar, Revisar, Integrar, Configurar, Balancear, Documentar, Exportar, Ajustar
+- Descrição: ferramenta da engine do projeto (${gddNormalizado.engine || 'a engine do projeto'}), parâmetro técnico, arquivo/asset entregue
+- "pronto quando": o que alguém verifica em 1 minuto para saber que a tarefa está feita (ex: "boss troca para estado Ataque quando o player chega a 5 tiles")
+- Se o GDD não define um valor que a tarefa precisa (vida, tempo, dano...), escreva "valor a definir" e inclua uma tarefa de design para definir esse valor
 - Prioridade: critical | high | medium | low
-- Tipo: feature | art | design | audio | test | fix | config | doc
-- Quantidade de tasks por feature (calibrado por fase):
-  poc: 3-5 tasks (loop mínimo, tudo cru — sem arte, sem áudio)
-  prototype: 5-8 tasks (sistemas completos com arte placeholder — state machine, física, IA)
-  demo: 5-8 tasks (polimento narrativo, visual e sonoro básico)
-  vertical_slice: 6-10 tasks (infraestrutura completa + arte/áudio final de 1 seção)
-  alpha: 6-10 tasks (expansão de conteúdo — todos os sistemas já existem)
-  beta+: 4-7 tasks (ajustes, QA, submissão, localização)
-- Duração: 1 ou 2 dias por task
-- Use nomes REAIS do GDD (personagens, mecânicas específicas, ambientes nomeados)
-- REGRA DE SISTEMAS ANTES DE CONTEÚDO:
-  Em features de programação no Prototype, crie as tasks na ordem certa:
-  1. Implementar a BASE do sistema (estrutura de dados, interface, estados)
-  2. Implementar cada comportamento/estado individual
-  3. Integrar com o motor de animação/física/IA
-  4. Testar o sistema isolado
-  5. Integrar ao game loop principal
-  Exemplo correto para IA de inimigo no Prototype:
-  - "Implementar StateMachine base para inimigo >> classe abstrata com estados enum, transições e callbacks | 2d | critical | feature"
-  - "Implementar estado Idle/Patrulha >> navmesh agent com waypoints, velocidade e campo de visão configuráveis | 1d | high | feature"
-  - "Implementar estado Alerta/Perseguição >> detecção por raio + ângulo, transição para perseguição quando player detectado | 2d | high | feature"
-  - "Implementar estado Ataque >> hitbox ativada, dano aplicado ao player, cooldown configurável | 1d | critical | feature"
-  - "Testar ciclo completo de IA >> rodar cenas de teste com 3 inimigos, validar todas as transições de estado | 1d | high | test"
+- Tipo: feature | art | design | audio | test | fix | config | doc | balance
+- Use nomes REAIS do GDD (personagens, mecânicas, ambientes, itens). Não use nomes genéricos se o GDD tiver o nome.
+- Ordene na ordem em que devem ser feitas (sistemas antes de conteúdo; base antes dos detalhes).
+
+Exemplo correto (formato e tamanho; IA de inimigo no MVP, cada linha cabe em meio dia — adapte à engine e à perspectiva do projeto):
+- [ ] Criar máquina de estados base do inimigo >> estados Patrulha/Alerta/Ataque + troca com entrada e saída de estado | 2h | critical | feature | pronto quando: troca de estado aparece no log
+- [ ] Implementar estado Patrulha >> anda entre 2 pontos da plataforma e vira na borda | 2h | high | feature | pronto quando: inimigo patrulha sem cair
+- [ ] Implementar detecção do player >> área de detecção de 6 tiles com checagem de linha de visão | 3h | high | feature | pronto quando: debug mostra quando o player é visto
+- [ ] Implementar estado Ataque >> ativa hitbox por 0.3s e tira 1 coração, recarga 1.5s | 2h | critical | feature | pronto quando: player perde 1 coração por golpe
+- [ ] Definir vida e tempos do inimigo >> tabela com vida, dano e recargas, valores a testar | 1h | medium | design | pronto quando: valores na planilha de balanceamento
+- [ ] Testar transições da IA em cena de teste >> 3 inimigos, todas as transições, lista de bugs | 1h | high | test | pronto quando: checklist de transições preenchido
 
 Retorne APENAS o Markdown:
 
 ## ${ft.title}
-- [ ] Título curto >> Descrição técnica do que fazer e como | 2d | high | feature
-- [ ] Outra task >> Entregável concreto com ferramenta | 1d | high | art`;
+- [ ] Título curto >> descrição técnica | 2h | high | tipo | pronto quando: critério
+- [ ] Outra tarefa >> entregável concreto com ferramenta | 1h | medium | tipo | pronto quando: critério`;
 
         let tasksMD = null;
         for (let attempt = 0; attempt < 3 && !tasksMD; attempt++) {
@@ -2393,10 +2667,13 @@ Retorne APENAS o Markdown:
             } catch (e) {
                 console.warn(`Erro tasks ${ft.title} (tentativa ${attempt + 1}):`, e);
                 if (attempt === 2) {
-                    tasksMD = `## ${ft.title}\n- [ ] Implementar ${ft.title} >> Erro ao gerar — reprocessar manualmente. | 2d | high | feature`;
+                    tasksMD = `## ${ft.title}\n- [ ] Implementar ${ft.title} >> Erro ao gerar — reprocessar manualmente. | 4h | high | feature`;
                 }
             }
         }
+
+        // Se a IA devolveu tarefas grandes demais ou poucas tarefas, pede uma quebra
+        tasksMD = await refinarGranularidadeTasks(ft, tasksMD, apiKey);
         results[ft.id] = tasksMD;
 
         if (onLog) onLog(ft, results[ft.id]);
@@ -2406,6 +2683,52 @@ Retorne APENAS o Markdown:
     }
 
     return results;
+}
+
+// Segunda passada (uma vez só): quebra tarefas acima do limite de horas
+// e completa features que vieram com tarefas de menos.
+async function refinarGranularidadeTasks(ft, tasksMD, apiKey) {
+    const tasks = GddReader.parseTaskLines(tasksMD);
+    if (!tasks.length) return tasksMD;
+    const check = GddReader.analyzeTaskGranularity(tasks, ft.milestoneType);
+    if (check.ok) return tasksMD;
+
+    const problemas = [];
+    if (check.oversized.length) {
+        problemas.push(`- Estas tarefas passam de ${GddReader.MAX_TASK_HOURS}h e precisam virar 2 a 4 tarefas menores cada: ${check.oversized.map(t => `"${t.title}" (${t.estimatedHours}h)`).join(', ')}`);
+    }
+    if (check.tooFew) {
+        problemas.push(`- A feature tem só ${tasks.length} tarefas; o mínimo para o marco ${ft.milestoneType} é ${check.target.min}. Detalhe os passos que faltam (estados, variações, integração, ajuste, teste).`);
+    }
+
+    const prompt = `Você é um produtor de jogos revisando a quebra de tarefas da feature "${ft.title}" (área ${ft.area}, marco ${ft.milestoneType}).
+
+TAREFAS ATUAIS:
+${tasksMD}
+
+PROBLEMAS:
+${problemas.join('\n')}
+
+Reescreva a lista completa corrigindo os problemas. Mantenha as tarefas que já estão boas, na mesma ordem.
+Cada tarefa leva de 1h a ${GddReader.MAX_TASK_HOURS}h e entrega UMA coisa verificável.
+
+Retorne APENAS o Markdown, no mesmo formato:
+
+## ${ft.title}
+- [ ] Título >> descrição técnica | Nh | prioridade | tipo | pronto quando: critério`;
+
+    try {
+        const refined = await callAIAPI(prompt, apiKey);
+        const refinedTasks = GddReader.parseTaskLines(refined);
+        // Só aceita a versão nova se ela de fato melhorou a granularidade
+        const refinedCheck = GddReader.analyzeTaskGranularity(refinedTasks, ft.milestoneType);
+        if (refinedTasks.length >= tasks.length && refinedCheck.oversized.length <= check.oversized.length) {
+            return refined;
+        }
+    } catch (e) {
+        console.warn(`Erro ao refinar tasks de ${ft.title}:`, e);
+    }
+    return tasksMD;
 }
 
 // Consolida MD v2 (milestones → features → tasks)
@@ -2570,9 +2893,10 @@ function extractSubareasFromMD(md) {
 }
 
 function roadmapPhaseContractText() {
-    return `CONTRATO DAS FASES DO ROADMAP (válido para qualquer gênero):
+    return `CONTRATO DAS VERSÕES DO JOGO (válido para qualquer gênero).
+Cada marco é uma versão jogável. A duração ao lado é o tempo de calendário da versão — o escopo precisa caber nele.
 
-POC (7 dias exatos):
+POC (${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.poc.weeks)}):
   PERGUNTA: "Consigo fazer esse jogo?"
   REGRA DE OURO: o jogador executa a ação principal → algo reage → existe condição de fim (vitória/derrota/próxima fase).
   Exemplos por gênero:
@@ -2585,7 +2909,7 @@ POC (7 dias exatos):
   OBRIGATÓRIO: loop completo de ponta a ponta (ação → reação → resultado), mesmo que cru.
   PROIBIDO: arte final, áudio final, UI polida, save/load, menus, balanceamento, conteúdo além do mínimo.
 
-PROTOTYPE (≈ 3-6 meses):
+MVP / PROTOTYPE (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.prototype.weeks)} após a PoC):
   PERGUNTA: "Isso é divertido?"
   Valida o loop de diversão. Assuma que a PoC existe.
   OBRIGATÓRIO: o principal desafio/antagonista/obstáculo do jogo com comportamento real (não placeholder de input),
@@ -2600,30 +2924,30 @@ PROTOTYPE (≈ 3-6 meses):
     estratégia: IA de oponente básica, 2-3 tipos de unidades com comportamento distinto
   PROIBIDO: save/load, troca de fases/cenas, inventário completo, menus polidos, todos os bosses/conteúdo.
 
-DEMO (≈ 2-4 meses após Prototype):
+DEMO (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.demo.weeks)} após o MVP):
   PERGUNTA: "Alguém quer jogar isso?"
   Build pública com início-meio-fim claro. Diferencial visível. Estabilidade para evento/Steam Next Fest.
   OBRIGATÓRIO: narrativa de abertura básica, caminho/sequência completa, polimento visual suficiente, áudio básico.
   Duração ideal: 15-30 minutos de jogo.
 
-VERTICAL SLICE (≈ 3-4 meses após Demo):
+VERTICAL SLICE (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.vertical_slice.weeks)} após a Demo):
   PERGUNTA: "Consigo terminar esse jogo nesse nível de qualidade?"
   Uma fatia polida com qualidade de lançamento + INFRAESTRUTURA completa.
   OBRIGATÓRIO: arte final, áudio final, UI final, save/load, troca de fases/cenas, fluxo de menus completo.
   O jogador joga do início ao fim dessa fatia como se fosse o jogo real.
 
-ALPHA (≈ 4-6 meses após VS):
+ALPHA (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.alpha.weeks)} após o VS):
   Jogo completo internamente: todos os sistemas, todo o conteúdo principal, bugs ok.
   Não entram mecânicas novas a partir daqui.
 
-BETA (≈ 2-3 meses após Alpha):
+BETA (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.beta.weeks)} após o Alpha):
   Conteúdo completo. Foco em balanceamento, QA externo, performance, localização, acessibilidade.
   Zero escopo novo.
 
-GOLD (≈ 1-2 meses após Beta):
+GOLD (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.gold.weeks)} após o Beta):
   Candidato a lançamento. Certificação/submissão de plataforma. Zero bugs críticos.
 
-RELEASE:
+RELEASE (≈ ${GddReader.formatWeeks(GddReader.VERSION_BUDGETS.release.weeks)}):
   Publicação, loja, comunicação, monitoramento, hotfixes, suporte pós-lançamento.`;
 }
 
@@ -2859,20 +3183,25 @@ function formatMilestoneMonth(month) {
 function normalizeMilestoneSequence(milestones, totalMonths = 24) {
     const phaseOrder = ['poc', 'prototype', 'demo', 'vertical_slice', 'alpha', 'beta', 'gold', 'release'];
 
-    // poc: sem valor fixo, cai em ~10% do projeto como fallback
-    // prototype: golden rule 7 dias — sempre 0.25 meses, nunca muda
+    // poc e prototype (MVP): duração vem de GddReader.VERSION_BUDGETS
     // demais fases: distribuídas entre o mês do prototype e o total
+    // Mês em que cada versão termina = soma do tamanho das versões até ela
+    const budgetMonth = type => {
+        const idx = GddReader.VERSION_ORDER.indexOf(type);
+        const weeks = GddReader.VERSION_ORDER.slice(0, idx + 1).reduce((t, k) => t + GddReader.VERSION_BUDGETS[k].weeks, 0);
+        return Math.round((weeks / 4.33) * 4) / 4;
+    };
     const getDefaultMonth = (type, total) => {
-        if (type === 'poc')       return 0.25;                            // golden rule: 7 dias
-        if (type === 'prototype') return 5;                               // média de 5 meses, pode ser mais
+        if (type === 'poc')       return GddReader.VERSION_BUDGETS.poc.weeks / 4;   // PoC: 2 semanas
+        if (type === 'prototype') return (GddReader.VERSION_BUDGETS.poc.weeks + GddReader.VERSION_BUDGETS.prototype.weeks) / 4; // MVP: 2 meses depois
         // fases restantes distribuídas entre mês 1 (após proto) e o total
         const remaining = { demo: 0.3, vertical_slice: 0.5, alpha: 0.68, beta: 0.84, gold: 0.94, release: 1 };
         return 1 + (total - 1) * remaining[type];
     };
 
     const phaseDefaults = {
-        poc:            { title: 'PoC — Jam Build (7 dias)' },
-        prototype:      { title: 'Prototipo Jogavel' },
+        poc:            { title: 'PoC' },
+        prototype:      { title: 'MVP' },
         demo:           { title: 'Demo Jogavel' },
         vertical_slice: { title: 'Vertical Slice' },
         alpha:          { title: 'Alpha Interna' },
@@ -2901,10 +3230,10 @@ function normalizeMilestoneSequence(milestones, totalMonths = 24) {
         const defaults = phaseDefaults[type];
         const existing = byType.get(type) || {};
         const defaultMonth = getDefaultMonth(type, totalMonths || 24);
-        // poc: golden rule de 7 dias — sempre forçamos 0.25 meses, ignora o que a IA gerou
-        // prototype: usa o valor da IA se gerou algo razoável, senão cai no padrão de 5 meses
-        const forceDefault = type === 'poc';
-        const raw = forceDefault ? defaultMonth : (existing.month || defaultMonth);
+        // poc: sempre forçamos a duração da PoC, ignora o que a IA gerou
+        // prototype (MVP): usa o valor da IA se gerou algo razoável, senão cai no padrão
+        // As versões têm tamanho fixo: o mês de cada uma sai de VERSION_BUDGETS, não da IA
+        const raw = budgetMonth(type) || (existing.month || defaultMonth);
         const month = Math.min(totalMonths || 24, Math.max(lastMonth + 0.25, raw));
         lastMonth = month;
 
@@ -2940,6 +3269,11 @@ async function mdToJSON(consolidatedMD, genreCtx, detectedGenre, apiKey, gddNorm
 
     // Detecta qual versão do fluxo gerou este MD
     const isV2 = consolidatedMD.includes('## MARCO:');
+    if (isV2) {
+        // No fluxo por versões, a duração é a soma do tamanho de cada versão (PoC 2 semanas, MVP 2 meses...)
+        const semanas = GddReader.VERSION_ORDER.reduce((t, type) => t + GddReader.VERSION_BUDGETS[type].weeks, 0);
+        overview.totalDurationMonths = Math.round(semanas / 4.33);
+    }
 
     const milestones = normalizeMilestoneSequence(
         parseMDMilestones(consolidatedMD),
@@ -3100,7 +3434,9 @@ function assignSprintPoints(objectives, totalMonths, skipLayout = false) {
             });
             kr.totalPoints  = (kr.tasks || []).reduce((s, t) => s + t.points, 0);
             kr.sprintCount  = Math.max(1, Math.ceil(kr.totalPoints / SPRINT_CAPACITY_POINTS));
-            kr.estimatedWeeks = kr.sprintCount * SPRINT_DURATION_WEEKS;
+            // Duração real da entrega (5 dias úteis por semana, mínimo 1 dia), não sprints inteiras:
+            // com tarefas de horas, arredondar cada entrega para 2 semanas inflava o cronograma
+            kr.estimatedWeeks = Math.max(0.2, Math.ceil(kr.totalPoints) / 5);
         });
 
         const totalWeeks   = (obj.keyResults || []).reduce((s, kr) => s + kr.estimatedWeeks, 0);
@@ -3280,7 +3616,7 @@ function scheduleRoadmap(objectives, teamConfig) {
 
     // ── Pass final: garante separação de fases no nível de meses ──
     // Necessário porque a resolução de semanas → meses pode colapsar fases adjacentes no mesmo mês.
-    // Regra: startMonth de QUALQUER objective da fase N > endMonth de QUALQUER objective da fase N-1.
+    // Regra: startMonth de QUALQUER objective da fase N >= endMonth de QUALQUER objective da fase N-1.
     const phaseEndMonths = {};
     for (const msType of MILESTONE_ORDER) {
         const objs = scheduled.filter(o => o.milestoneType === msType);
@@ -3294,8 +3630,9 @@ function scheduleRoadmap(objectives, teamConfig) {
         // Mês mais cedo de QUALQUER objective desta fase
         const phaseMinStart = Math.min(...objs.map(o => o.startMonth));
 
-        if (phaseMinStart <= prevPhaseEnd) {
-            const shift = prevPhaseEnd + 1 - phaseMinStart;
+        // Fases curtas (PoC de 2 semanas) podem terminar e começar no mesmo mês
+        if (phaseMinStart < prevPhaseEnd) {
+            const shift = prevPhaseEnd - phaseMinStart;
             // Desloca TODOS os objectives desta fase uniformemente
             objs.forEach(obj => {
                 obj.startMonth += shift;
@@ -3363,15 +3700,15 @@ function buildSimpleRows(objectives) {
 function calculateObjectiveCost(obj) {
     const area = obj?.area || 'production';
     const rate = hourlyRates[area] || 0;
-    let days = 0;
+    let hours = 0;
     let tasks = 0;
     (obj?.keyResults || []).forEach(kr => {
         (kr.tasks || []).forEach(task => {
             tasks++;
-            days += task.estimatedDays || 2;
+            hours += taskHours(task);
         });
     });
-    const hours = days * HOURS_PER_ESTIMATED_DAY;
+    const days = hours / HOURS_PER_ESTIMATED_DAY;
     return { tasks, days, hours, cost: hours * rate };
 }
 
@@ -3434,19 +3771,20 @@ function parseMDSprints_v2(md, milestoneList) {
 
             let taskIdx = 0;
             for (const line of ftLines.slice(1)) {
-                const taskMatch = line.match(/^-\s+\[[ x]\]\s+(.+?)\s*\|\s*(\d+)d\s*\|\s*(\w+)\s*\|\s*(\w+)/);
-                if (taskMatch) {
-                    const rawTitle = taskMatch[1].trim();
-                    const sepIdx = rawTitle.indexOf('>>');
-                    const title = sepIdx >= 0 ? rawTitle.slice(0, sepIdx).trim() : rawTitle;
-                    const description = sepIdx >= 0 ? rawTitle.slice(sepIdx + 2).trim() : '';
+                // "- [ ] Título >> Descrição | 2h | prioridade | tipo | pronto quando: X" (aceita "| 2d |" de projetos antigos)
+                const parsed = GddReader.parseTaskLine(line);
+                if (parsed) {
                     kr.tasks.push({
                         id: `${kr.id}_t${taskIdx + 1}`,
-                        title,
-                        description,
-                        estimatedDays: Math.min(2, Math.max(1, parseInt(taskMatch[2]))),
-                        priority: taskMatch[3].trim(),
-                        type: taskMatch[4].trim(),
+                        title: parsed.title,
+                        description: parsed.doneWhen
+                            ? `${parsed.description}${parsed.description ? '\n' : ''}Pronto quando: ${parsed.doneWhen}`
+                            : parsed.description,
+                        estimatedHours: parsed.estimatedHours,
+                        estimatedDays: parsed.estimatedDays,
+                        doneWhen: parsed.doneWhen,
+                        priority: parsed.priority,
+                        type: parsed.type,
                         milestoneId: ms.id,
                         milestoneType: msType,
                     });
@@ -3465,7 +3803,8 @@ function parseMDSprints_v2(md, milestoneList) {
                             id: `${kr.id}_t${kr.tasks.length + 1}`,
                             title: sepIdx >= 0 ? raw.slice(0, sepIdx).trim() : raw,
                             description: sepIdx >= 0 ? raw.slice(sepIdx + 2).trim() : '',
-                            estimatedDays: 2,
+                            estimatedHours: GddReader.MAX_TASK_HOURS,
+                            estimatedDays: Math.round((GddReader.MAX_TASK_HOURS / HOURS_PER_ESTIMATED_DAY) * 100) / 100,
                             priority: 'medium',
                             type: 'feature',
                             milestoneId: ms.id,
@@ -3738,9 +4077,9 @@ async function generateEditalSummary(sprintResult, milestoneResult, genreCtx, ap
     const totalTasks = sprintResult.objectives.reduce((total, obj) =>
         total + (obj.keyResults || []).reduce((t, kr) => t + (kr.tasks || []).length, 0), 0);
 
-    const totalManDays = sprintResult.objectives.reduce((total, obj) =>
+    const totalManDays = Math.round(sprintResult.objectives.reduce((total, obj) =>
         total + (obj.keyResults || []).reduce((t, kr) =>
-            t + (kr.tasks || []).reduce((tt, task) => tt + (task.estimatedDays || 2), 0), 0), 0);
+            t + (kr.tasks || []).reduce((tt, task) => tt + taskHours(task) / HOURS_PER_ESTIMATED_DAY, 0), 0), 0));
 
     const milestonesSummary = (milestoneResult.milestones || [])
         .map(m => `  - Marco ${formatMilestoneMonth(m.month)}: "${m.title}" — ${m.description}`)
@@ -4150,6 +4489,25 @@ function handleTeamSlider(area, rawValue) {
     onTeamConfigChange();
 }
 
+// Horas planejadas em cada versão do jogo × tamanho da versão
+function relatorioVersoes(objectives, teamSize) {
+    const horas = {};
+    (objectives || []).forEach(obj => (obj.keyResults || []).forEach(kr => (kr.tasks || []).forEach(task => {
+        const type = task.milestoneType || obj.milestoneType;
+        if (!type) return;
+        horas[type] = (horas[type] || 0) + taskHours(task);
+    })));
+    return GddReader.checkVersionBudgets(horas, GddReader.parseTeamSize(teamSize), { hoursPerDay: HOURS_PER_ESTIMATED_DAY });
+}
+
+function relatorioVersoesTexto(rows, teamSize) {
+    const equipe = GddReader.parseTeamSize(teamSize);
+    const marca = { ok: '✓ cabe', acima: '⚠ acima do tamanho da versão', abaixo: '• sobra tempo' };
+    return [`Equipe considerada: ${equipe} pessoa(s), ${HOURS_PER_ESTIMATED_DAY}h por dia`]
+        .concat(rows.map(r => `${r.label} (${GddReader.formatWeeks(r.weeks)}): ${formatNumberBR(r.plannedHours)}h planejadas de ${formatNumberBR(r.budgetHours)}h — ${marca[r.status]}`))
+        .join('\n');
+}
+
 function populateOverview() {
     const overviewContent = document.getElementById('overviewContent');
     const overview = analysisResult.overview;
@@ -4161,6 +4519,7 @@ function populateOverview() {
     }
 
     const totalTasks = countTotalTasks();
+    const versoes = relatorioVersoes(analysisResult.objectives, overview.teamSize);
 
     // Atualiza título no header da seção
     const titleEl = document.getElementById('resultsProjectTitle');
@@ -4191,6 +4550,12 @@ function populateOverview() {
         <div class="overview-desc-row">
             ${overview.description || ''}
         </div>
+        ${versoes.length ? `<div class="overview-desc-row">
+            ${versoes.map(r => `<div class="overview-line" title="${formatNumberBR(r.plannedHours)}h planejadas de ${formatNumberBR(r.budgetHours)}h">
+                <span class="overview-line-label">${escapeHtml(r.label)} · ${GddReader.formatWeeks(r.weeks)}</span>
+                <span class="overview-line-value">${formatNumberBR(r.plannedHours)}h / ${formatNumberBR(r.budgetHours)}h ${r.status === 'ok' ? '✓' : r.status === 'acima' ? '⚠ acima' : '• sobra'}</span>
+            </div>`).join('')}
+        </div>` : ''}
         <div class="overview-row">
             <div class="overview-line">
                 <span class="overview-line-label">Tarefas</span>
@@ -4424,7 +4789,7 @@ function renderTaskGantt() {
         const color    = AREA_COLORS[task.area] || '#6b7280';
         const taskName = task.title || task.description || 'Tarefa';
         const days     = task.estimatedDays || 2;
-        const title    = `${taskName} · ${task.krTitle || ''} · ${days}d`;
+        const title    = `${taskName} · ${task.krTitle || ''} · ${formatTaskEstimate(task)}`;
 
 
         // Label da tarefa
@@ -4440,7 +4805,7 @@ function renderTaskGantt() {
         // Gerar um quadradinho por dia ocupado
         let cellsHTML = '';
         const GAP = 1; // px de margem horizontal em cada célula
-        for (let d = task._startDay; d < task._endDay; d++) {
+        for (let d = Math.floor(task._startDay); d < Math.ceil(task._endDay); d++) {
             const left = d * DAY_COL_PX + GAP;
             const width = DAY_COL_PX - GAP * 2;
             cellsHTML += `<div class="task-day-cell" style="left:${left}px;width:${width}px;background:${color};" title="${title}"></div>`;
@@ -4780,7 +5145,7 @@ function populateHierarchicalTasks() {
     const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
     const typeIcons = {
         feature: '⚙️', fix: '🐛', art: '🎨', design: '📐',
-        audio: '🔊', test: '🧪', config: '🔧'
+        audio: '🔊', test: '🧪', config: '🔧', doc: '📄', balance: '⚖️'
     };
 
     objList.forEach((obj, objIndex) => {
@@ -4835,7 +5200,7 @@ function populateHierarchicalTasks() {
                         <div class="kr-title">${kr.title}</div>
                         <div class="kr-meta">
                             <span class="meta-badge" style="background:rgba(99,102,241,0.1);color:#4f46e5;">${weeksLabel}</span>
-                            <span class="meta-stat">${tasks.length} tarefas · ${totalPoints} pts</span>
+                            <span class="meta-stat">${tasks.length} tarefas · ${formatNumberBR(tasks.reduce((h, task) => h + taskHours(task), 0), 1)}h</span>
                             ${kr.dependencies && kr.dependencies.length > 0
                                 ? `<span class="meta-badge dep-badge">deps: ${kr.dependencies.join(', ')}</span>`
                                 : ''}
@@ -4874,7 +5239,7 @@ function populateHierarchicalTasks() {
                         </div>
                         <div class="task-meta-row">
                             <span class="meta-badge priority-${task.priority}">${task.priority}</span>
-                            <span class="days-badge" title="${task.estimatedDays || 2} dias · ${task.points || task.estimatedDays || 2} pts">⏱ ${task.estimatedDays || 2}d · ${task.points || task.estimatedDays || 2}pts</span>
+                            <span class="days-badge" title="${formatTaskEstimate(task)} · ${task.points || task.estimatedDays || 2} pts">⏱ ${formatTaskEstimate(task)}</span>
                             <span class="type-badge">${task.type || 'feature'}</span>
                         </div>
                     </div>
@@ -5293,7 +5658,7 @@ function populateTasksByMilestone() {
     const areaIcons = { programming: '💻', art: '🎨', design: '📋', audio: '🎵', qa: '🧪', production: '📊' };
     const areaColors = { programming: '#3b82f6', art: '#8b5cf6', design: '#10b981', audio: '#f59e0b', qa: '#ef4444', production: '#6366f1' };
     const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-    const typeIcons = { feature: '⚙️', fix: '🐛', art: '🎨', design: '📐', audio: '🔊', test: '🧪', config: '🔧' };
+    const typeIcons = { feature: '⚙️', fix: '🐛', art: '🎨', design: '📐', audio: '🔊', test: '🧪', config: '🔧', doc: '📄', balance: '⚖️' };
 
     // Associar objetivo ao menor marco cujo mês >= startMonth do objetivo
     function getMilestoneForObj(obj) {
@@ -5399,7 +5764,7 @@ function populateTasksByMilestone() {
                             <div class="kr-title">${kr.title}</div>
                             <div class="kr-meta">
                                 <span class="meta-badge" style="background:rgba(99,102,241,0.1);color:#4f46e5;">${weeksLabel}</span>
-                                <span class="meta-stat">${tasks.length} tarefas · ${totalPoints} pts</span>
+                                <span class="meta-stat">${tasks.length} tarefas · ${formatNumberBR(tasks.reduce((h, task) => h + taskHours(task), 0), 1)}h</span>
                             </div>
                         </div>
                         <div class="kr-toggle">▼</div>
@@ -5438,7 +5803,7 @@ function populateTasksByMilestone() {
                             </div>
                             <div class="task-meta-row">
                                 <span class="meta-badge priority-${task.priority}">${task.priority}</span>
-                                <span class="days-badge">⏱ ${task.estimatedDays || 2}d · ${task.points || task.estimatedDays || 2}pts</span>
+                                <span class="days-badge">⏱ ${formatTaskEstimate(task)}</span>
                                 <span class="type-badge">${task.type || 'feature'}</span>
                             </div>
                         </div>
@@ -5557,6 +5922,7 @@ function buildExportData() {
         overview: analysisResult.overview,
         milestones: analysisResult.milestones || [],
         editalSummary: analysisResult.editalSummary || null,
+        ...(analysisResult.documentoFeatures ? { documentoFeatures: analysisResult.documentoFeatures } : {}),
         costSummary,
         hourlyRates: { ...hourlyRates },
         hoursPerEstimatedDay: HOURS_PER_ESTIMATED_DAY,
@@ -5579,6 +5945,8 @@ function buildExportData() {
                     title: t.title,
                     ...(workTaskDescription(t) ? { description: workTaskDescription(t) } : {}),
                     estimatedDays: t.estimatedDays,
+                    ...(t.estimatedHours ? { estimatedHours: t.estimatedHours } : {}),
+                    ...(t.doneWhen ? { doneWhen: t.doneWhen } : {}),
                     priority: t.priority,
                     type: t.type,
                     status: taskStatusFor(obj, kr, t),
@@ -6868,6 +7236,7 @@ function normalizeExportToAnalysis(exportJson) {
         totalDurationMonths: meta.totalMonths || 12,
         milestones: exportJson.milestones || [],
         editalSummary: exportJson.editalSummary || null,
+        ...(exportJson.documentoFeatures ? { documentoFeatures: exportJson.documentoFeatures } : {}),
         costSummary: exportJson.costSummary || null,
         objectives: (exportJson.objectives || []).map(obj => ({
             id: obj.id || ('obj_' + Math.random().toString(36).slice(2)),
@@ -6888,6 +7257,8 @@ function normalizeExportToAnalysis(exportJson) {
                     title: t.title || '',
                     ...(t.description ? { description: t.description } : {}),
                     estimatedDays: t.estimatedDays || 2,
+                    ...(t.estimatedHours ? { estimatedHours: t.estimatedHours } : {}),
+                    ...(t.doneWhen ? { doneWhen: t.doneWhen } : {}),
                     points: t.estimatedDays || 2,
                     priority: t.priority || 'medium',
                     type: t.type || 'feature',
@@ -7902,7 +8273,7 @@ function workCreateCard(ref, colName) {
 
     const prevCol = colName === 'doing' ? 'todo'  : colName === 'done' ? 'doing' : null;
     const nextCol = colName === 'todo'  ? 'doing' : colName === 'doing' ? 'done' : null;
-    const typeIcons = { feature:'⚙️', fix:'🐛', art:'🎨', design:'📐', audio:'🔊', test:'🧪', config:'🔧', doc:'📄' };
+    const typeIcons = { feature:'⚙️', fix:'🐛', art:'🎨', design:'📐', audio:'🔊', test:'🧪', config:'🔧', doc:'📄', balance:'⚖️' };
     const areaColors = { programming:'#3b82f6', art:'#8b5cf6', design:'#10b981', audio:'#f59e0b', qa:'#ef4444' };
     const color = areaColors[obj.area] || '#6366f1';
     const sprintLabel = kr.sprintNumber ? `Sprint ${kr.sprintNumber}` : 'Sem sprint';
@@ -7915,7 +8286,7 @@ function workCreateCard(ref, colName) {
             <span class="meta-badge" style="background:${color}18;color:${color}">${sprintLabel}</span>
             <span class="meta-badge priority-${task.priority}">${task.priority}</span>
             <span class="meta-badge" style="background:var(--gray-100);color:var(--gray-500)">${typeIcons[task.type]||'📌'} ${task.type||'feature'}</span>
-            <span class="kcard-days">⏱ ${task.estimatedDays||2}d</span>
+            <span class="kcard-days">⏱ ${formatTaskEstimate(task)}</span>
         </div>
         <div class="kcard-context">${kr.title}</div>
         <div class="kcard-actions">

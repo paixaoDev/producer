@@ -15,7 +15,7 @@ O resultado é uma hierarquia de três níveis:
 ```
 Objetivo (Sub-área de desenvolvimento)
   └── Key Result (Entrega verificável dentro da sub-área)
-        └── Tarefa de Sprint (Ação concreta de 1-3 dias)
+        └── Tarefa (ação concreta de 1 a 4 horas — várias por dia)
 ```
 
 Essa estrutura é compatível com metodologias OKR e ágeis (Scrum/Kanban).
@@ -53,7 +53,7 @@ Arraste e solte o arquivo do GDD na área de upload, ou clique em **Escolher Arq
 - **DOCX/DOC** — extraído diretamente do XML interno
 - **TXT** — lido diretamente, sem processamento
 
-Tamanho máximo: **10MB**. Para GDDs maiores, exporte os primeiros 20.000 caracteres como TXT.
+Tamanho máximo: **10MB**. O Producer lê até 120.000 caracteres do GDD; os títulos do documento (Heading no Word, `#` no Markdown, linhas em CAIXA ALTA) são usados para dividir o GDD em seções.
 
 ### Passo 4 — Analisar o GDD
 
@@ -61,11 +61,11 @@ Clique em **Analisar GDD**. A IA passa por 5 fases de processamento, mostradas n
 
 | Fase | O que acontece |
 |------|----------------|
-| Normalizando GDD | A IA lê o documento e preenche um template estruturado com todas as informações do jogo |
-| Sub-áreas | A IA define de 12 a 22 sub-áreas de desenvolvimento específicas para o seu projeto |
-| KRs | Para cada sub-área, a IA gera de 3 a 6 Key Results verificáveis |
-| Sprints | Para cada KR, a IA gera de 3 a 7 tarefas pequenas de sprint com estimativa em dias |
-| Milestones | A IA define 7 marcos do projeto com critérios de aceite |
+| Normalizando GDD | A IA lê o documento e preenche um template estruturado com as informações gerais do jogo |
+| Documento de features | O GDD inteiro é lido em blocos de ~12.000 caracteres. A cada bloco a IA vê o índice das features que já estão no documento e responde só com o que é novo: **features novas** ou **complementos** de features existentes (regras, números, estados, conteúdo). O código junta tudo, então nada lido antes se perde. O documento não tem versão e pode ser baixado em .md na revisão ou em Ações |
+| Versões (marcos) | A IA define as 8 versões do jogo (PoC → Lançamento) a partir do documento |
+| Entregas por versão | Para cada versão, a IA escolhe as features do documento que entram nela e qual parte de cada uma (`[ref: F03]`). Features que nenhuma versão pegou entram no Alpha automaticamente |
+| Tarefas | Cada entrega é quebrada a partir da **especificação completa** da feature no documento em 5 a 20 tarefas de **1 a 4 horas**, com critério "pronto quando". Tarefas maiores que 4h ou poucas tarefas disparam uma segunda passada que quebra as grandes |
 
 Durante o processamento, um painel ao vivo mostra o que a IA está gerando em tempo real.
 
